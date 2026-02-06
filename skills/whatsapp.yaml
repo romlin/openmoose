@@ -1,0 +1,29 @@
+name: whatsapp
+description: Send a WhatsApp message to a contact
+examples:
+  - "send hello to vanja on whatsapp"
+  - "whatsapp message to henric saying hi"
+  - "skicka hej till vanja på whatsapp"
+  - "message vanja on whatsapp that I am late"
+  - "berätta för vanja på whatsapp att jag kommer snart"
+  - "message the result to vanja"
+  - "send the weather update to henric on whatsapp"
+  - "whatsapp vanja with the previous results"
+  - "tell vanja about the outcome on whatsapp"
+  - "Send a WhatsApp message to Vanja with the weather results"
+  - "Send a WhatsApp message to Henric saying hello"
+args:
+  name:
+    patterns:
+      - '(?:to|till|för) ([a-zA-ZåäöÅÄÖ]+)(?:\s+[a-zA-ZåäöÅÄÖ]+)?(?:(?=\s+(?:with|saying|that|att|med|on|på|via|through))|$)'
+      - 'whatsapp (?:message )?to ([a-zA-ZåäöÅÄÖ\s]+)'
+      - 'message ([a-zA-ZåäöÅÄÖ\s]+) on whatsapp'
+    fallback: "Unknown"
+  text:
+    patterns:
+      - "(?:send|skicka) (.+) (?:to|till)"
+      - "saying (.+)"
+      - "att (.+)"
+      - "texten (.+)"
+host: true
+command: "npx tsx src/cli/send-wa.ts --name \"{{name}}\" --text \"{{text}}\""

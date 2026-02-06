@@ -1,0 +1,11 @@
+name: time
+description: Get current time and date
+examples:
+  - "what time is it"
+  - "current time"
+  - "what is the time"
+  - "vad är klockan"
+  - "hur mycket är klockan"
+  - "tell me the time"
+  - "Get the current time"
+command: "date '+%H:%M on %A, %B %d, %Y'"

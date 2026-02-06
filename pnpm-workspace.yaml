@@ -1,0 +1,10 @@
+packages:
+  - .
+
+ignoredBuiltDependencies:
+  - onnxruntime-node
+
+onlyBuiltDependencies:
+  - '@whiskeysockets/baileys'
+  - esbuild
+  - protobufjs

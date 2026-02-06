@@ -1,0 +1,21 @@
+name: weather
+description: Get current weather for a city
+examples:
+  - "what is the weather in berlin"
+  - "how is the weather in stockholm"
+  - "weather for tomorrow in eslöv"
+  - "whats the weather like in tokyo"
+  - "vad är vädret i malmö"
+  - "hur är vädret i göteborg"
+  - "weather forecast for london"
+  - "is it raining in paris"
+  - "Get the current weather in Malmö"
+  - "Find the weather in Tokyo"
+args:
+  city:
+    patterns:
+      - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
+    fallback: "Stockholm"
+command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\"" 

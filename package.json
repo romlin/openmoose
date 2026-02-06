@@ -1,0 +1,75 @@
+{
+  "name": "openmoose",
+  "version": "0.1.0",
+  "description": "OpenMoose: The local-first AI assistant that doesn’t charge you by the antler.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "author": "OpenMoose Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenMoose/openmoose.git"
+  },
+  "homepage": "https://github.com/OpenMoose/openmoose#readme",
+  "bugs": {
+    "url": "https://github.com/OpenMoose/openmoose/issues"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "local-first",
+    "privacy",
+    "ollama",
+    "whatsapp",
+    "llm",
+    "tts",
+    "voice"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "gateway": "tsx src/gateway/server.ts",
+    "auth": "tsx src/cli/whatsapp-auth.ts",
+    "build": "tsc",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@hapi/boom": "10.0.1",
+    "@hono/node-server": "1.19.9",
+    "@lancedb/lancedb": "0.24.1",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "apache-arrow": "18.1.0",
+    "chalk": "5.6.2",
+    "commander": "14.0.3",
+    "cron-parser": "5.5.0",
+    "dotenv": "17.2.4",
+    "hono": "4.11.8",
+    "js-yaml": "4.1.1",
+    "ollama": "0.6.3",
+    "onnxruntime-node": "1.24.1",
+    "ora": "9.3.0",
+    "pino": "10.3.0",
+    "qrcode": "1.5.4",
+    "qrcode-terminal": "0.12.0",
+    "ws": "8.19.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@types/js-yaml": "4.0.9",
+    "@types/node": "25.2.1",
+    "@types/qrcode": "1.5.6",
+    "@types/ws": "8.18.1",
+    "@typescript-eslint/eslint-plugin": "8.54.0",
+    "@typescript-eslint/parser": "8.54.0",
+    "eslint": "9.39.2",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.54.0",
+    "vitest": "4.0.18"
+  }
+}
