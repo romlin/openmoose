@@ -186,8 +186,24 @@ export class AgentRunner {
             try {
                 args = JSON.parse(tc.function.arguments || '{}');
             } catch {
-                logger.warn(`Failed to parse JSON args for ${name}: "${tc.function.arguments}". Fallback to _raw.`, 'Runner');
-                args = { _raw: tc.function.arguments?.trim() || '' };
+                const raw = tc.function.arguments?.trim() || '';
+                // LLMs sometimes concatenate multiple JSON objects ("{}{}").
+                // Try to split on `}{` boundaries and use the first valid object.
+                const parts = raw.includes('}{')
+                    ? raw.split(/(?<=\})(?=\{)/)
+                    : [];
+                let recovered = false;
+                if (parts.length > 1) {
+                    try {
+                        args = JSON.parse(parts[0]);
+                        recovered = true;
+                        logger.warn(`Recovered first of ${parts.length} concatenated JSON objects for ${name}.`, 'Runner');
+                    } catch { /* fall through to _raw */ }
+                }
+                if (!recovered) {
+                    logger.warn(`Failed to parse JSON args for ${name} (${typeof raw}, len=${raw.length}). Fallback to _raw.`, 'Runner');
+                    args = { _raw: raw };
+                }
             }
 
             onToolCall?.({ name, args });
@@ -197,7 +213,10 @@ export class AgentRunner {
             if (result.success) {
                 logger.success(`Tool ${name} succeeded.`, 'Runner');
             } else {
-                logger.warn(`Tool ${name} failed: ${result.error}`, 'Runner');
+                const safeError = typeof result.error === 'string'
+                    ? result.error.slice(0, 120)
+                    : 'unknown error';
+                logger.warn(`Tool ${name} failed: ${safeError}`, 'Runner');
             }
             results.push({ tool: name, result });
         }

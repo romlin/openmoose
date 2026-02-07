@@ -4,3 +4,4 @@ WORKDIR /app
 ARG PW_VERSION
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm init -y > /dev/null 2>&1 && npm install playwright@${PW_VERSION}
+COPY daemon.js .

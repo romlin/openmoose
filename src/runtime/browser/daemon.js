@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, no-undef */
 /**
  * Persistent Playwright browser daemon.
  * Runs inside a Docker container, exposes an HTTP API for browser control.
@@ -200,12 +201,29 @@ async function executeAction(p, raw) {
 
 /* ── HTTP helpers ───────────────────────────────────────── */
 
+const MAX_BODY_SIZE = 1_048_576; // 1 MB
+
 function readBody(req) {
     return new Promise((resolve, reject) => {
         let data = '';
-        req.on('data', chunk => data += chunk);
-        req.on('end', () => resolve(data));
-        req.on('error', reject);
+        let size = 0;
+        const onData = (chunk) => {
+            size += chunk.length;
+            if (size > MAX_BODY_SIZE) {
+                req.removeListener('data', onData);
+                req.removeListener('end', onEnd);
+                req.removeListener('error', onError);
+                req.destroy();
+                reject(new Error('Request body too large'));
+                return;
+            }
+            data += chunk;
+        };
+        const onEnd = () => resolve(data);
+        const onError = (err) => reject(err);
+        req.on('data', onData);
+        req.on('end', onEnd);
+        req.on('error', onError);
     });
 }
 

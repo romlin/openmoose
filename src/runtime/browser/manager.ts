@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { config } from '../../config/index.js';
 import { logger } from '../../infra/logger.js';
 import {
@@ -14,6 +15,8 @@ import {
     BROWSER_DAEMON_HEALTH_URL,
     BROWSER_IMAGE_PREFIX,
 } from './constants.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Extract Playwright version from the Docker image tag (e.g. "v1.58.0-noble" → "1.58.0"). */
 function playwrightVersion(): string {
@@ -59,8 +62,17 @@ export class BrowserManager {
             '-p', `${BROWSER_DAEMON_PORT}:${BROWSER_DAEMON_PORT}`,
             '--ipc=host',
             '-e', `PORT=${BROWSER_DAEMON_PORT}`,
-            // Daemon script (read-only bind mount for dev iteration)
-            '-v', `${path.join(process.cwd(), 'src/runtime/browser/daemon.js')}:/app/daemon.js:ro`,
+        ];
+
+        // In dev, daemon.js lives alongside this file in src/; bind-mount it
+        // so changes take effect without rebuilding the image.  In prod the
+        // file is baked into the image via COPY, so no mount is needed.
+        const daemonSrc = path.resolve(__dirname, 'daemon.js');
+        if (fs.existsSync(daemonSrc)) {
+            args.push('-v', `${daemonSrc}:/app/daemon.js:ro`);
+        }
+
+        args.push(
             // Browser profiles
             '-v', `${profileDir}:/root/.config/google-chrome`,
             '-v', `${profileDir}:/root/.mozilla`,
@@ -69,7 +81,7 @@ export class BrowserManager {
             '--cap-add', 'SYS_ADMIN',
             tag,
             'node', 'daemon.js',
-        ];
+        );
 
         const startCode = await dockerRun(args, 'BrowserDaemon');
         if (startCode !== 0) throw new Error(`Failed to start browser daemon (exit ${startCode})`);
@@ -118,7 +130,7 @@ export class BrowserManager {
         const version = playwrightVersion() || '1.58.0';
         logger.info(`Building browser image ${tag} (first time only)...`, 'BrowserManager');
 
-        const contextDir = path.join(process.cwd(), 'src/runtime/browser');
+        const contextDir = __dirname;
         const buildCode = await dockerRun([
             'build', '-t', tag,
             '--build-arg', `PW_VERSION=${version}`,

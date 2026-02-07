@@ -32,7 +32,7 @@
     "dev": "tsx src/cli/index.ts",
     "gateway": "tsx src/gateway/server.ts",
     "auth": "tsx src/cli/whatsapp-auth.ts",
-    "build": "tsc",
+    "build": "tsc && cp src/runtime/browser/daemon.js src/runtime/browser/Dockerfile dist/runtime/browser/",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest"

@@ -18,8 +18,11 @@ const ACTION_TYPES = ['navigate', 'click', 'type', 'wait', 'press', 'screenshot'
 /** Default timeout for browser actions (ms). */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Number that also accepts string input (LLMs often stringify numbers). */
-const laxNumber = z.union([z.number(), z.string().transform(Number)]);
+/** Number that also accepts string input (LLMs often stringify numbers). Rejects NaN. */
+const laxNumber = z.union([
+    z.number(),
+    z.string().transform(Number).refine(v => !Number.isNaN(v), { message: 'Expected a numeric string' }),
+]);
 
 /** Schema for a single action entry. */
 const ActionEntrySchema = z.object({
