@@ -186,13 +186,19 @@ export class AgentRunner {
             try {
                 args = JSON.parse(tc.function.arguments || '{}');
             } catch {
-                logger.error(`Failed to parse arguments for ${name}`, 'Runner');
+                logger.warn(`Failed to parse JSON args for ${name}: "${tc.function.arguments}". Fallback to _raw.`, 'Runner');
+                args = { _raw: tc.function.arguments?.trim() || '' };
             }
 
             onToolCall?.({ name, args });
             logger.info(`Executing tool: ${name}`, 'Runner');
 
             const result = await this.registry.execute(name, args, context);
+            if (result.success) {
+                logger.success(`Tool ${name} succeeded.`, 'Runner');
+            } else {
+                logger.warn(`Tool ${name} failed: ${result.error}`, 'Runner');
+            }
             results.push({ tool: name, result });
         }
 

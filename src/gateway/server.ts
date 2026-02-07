@@ -24,6 +24,7 @@ import { printBanner, printStatus, printPending, printReady } from '../infra/ban
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { config } from '../config/index.js';
+import { BrowserManager } from '../runtime/browser/manager.js';
 
 /** Maximum number of history messages kept per session. */
 const MAX_HISTORY_LENGTH = 20;
@@ -153,8 +154,8 @@ export class LocalGateway {
         }, history);
 
         const updatedHistory = [...history,
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: fullResponse }
+        { role: 'user' as const, content: message },
+        { role: 'assistant' as const, content: fullResponse }
         ].slice(-MAX_HISTORY_LENGTH);
 
         saveHistory(updatedHistory);
@@ -263,6 +264,26 @@ export class LocalGateway {
         await this.scheduler.init();
         this.scheduler.start();
         printStatus('Scheduler', `active · ${SCHEDULER_POLL_MS / 1000}s poll`);
+
+        // Browser Daemon
+        try {
+            await BrowserManager.ensureRunning();
+            printStatus('Browser', 'daemon active');
+        } catch (e) {
+            logger.error('Failed to start Browser Daemon', 'Gateway', e);
+        }
+
+        // Shutdown hooks
+        const shutdown = async () => {
+            logger.info('Shutting down Gateway...', 'Gateway');
+            // Attempt clean shutdown but don't block exit on failure
+            await BrowserManager.stop().catch(err => {
+                logger.warn(`Error stopping browser: ${err.message}`, 'Gateway');
+            });
+            process.exit(0);
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
     }
 
     /** Connect WhatsApp and set up the message bridge. */

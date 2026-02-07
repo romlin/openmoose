@@ -47,7 +47,7 @@ export const config = {
     sandbox: {
         profileDir: process.env.BROWSER_PROFILE_DIR || path.join(process.cwd(), '.moose/data', 'browser-profiles'),
         defaultImage: 'python:3.12-slim',
-        playwrightImage: 'mcr.microsoft.com/playwright:v1.49.0-noble',
+        playwrightImage: 'mcr.microsoft.com/playwright:v1.58.0-noble',
     },
     logging: {
         level: process.env.LOG_LEVEL || 'info',

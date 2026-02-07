@@ -44,7 +44,7 @@ images=(
     "debian:bookworm-slim"
     "python:3.12-slim"
     "node:22-slim"
-    "mcr.microsoft.com/playwright:v1.49.0-noble"
+    "mcr.microsoft.com/playwright:v1.58.0-noble"
 )
 
 pids=()
