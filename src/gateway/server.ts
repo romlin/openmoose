@@ -115,7 +115,8 @@ export class LocalGateway {
                 (history) => this.sessions.set(ws, history),
                 {
                     onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
-                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool }))
+                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
+                    onToolResult: (payload) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...payload }))
                 }
             );
 
@@ -145,12 +146,14 @@ export class LocalGateway {
         saveHistory: (history: { role: 'user' | 'assistant', content: string }[]) => void,
         callbacks: {
             onDelta?: (text: string) => void,
-            onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void
+            onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void,
+            onToolResult?: (payload: { name: string; success: boolean; error?: string }) => void
         } = {}
     ): Promise<string> {
         const fullResponse = await this.runner.run(message, {
             onDelta: callbacks.onDelta || (() => { }),
-            onToolCall: callbacks.onToolCall
+            onToolCall: callbacks.onToolCall,
+            onToolResult: callbacks.onToolResult
         }, history);
 
         const updatedHistory = [...history,

@@ -55,14 +55,18 @@ export class LocalBrain {
     history: { role: string; content: string }[] = []
   ): Promise<OpenAIMessage[]> {
     let memoryContext = '';
-    try {
-      const memories = await this.memory.recall(message);
-      if (memories.length > 0) {
-        memoryContext = memories.map(m => `- ${m}`).join('\n');
+
+    // Optimization: Skip memory recall for very short or purely conversational messages
+    const trivial = /^(hi|hello|hey|ok|okay|thanks|thank you|yes|no|stop|summarize|continue)\.?$/i;
+    if (message.length > 2 && !trivial.test(message.trim())) {
+      try {
+        const memories = await this.memory.recall(message);
+        if (memories.length > 0) {
+          memoryContext = memories.map(m => `- ${m}`).join('\n');
+        }
+      } catch (err) {
+        logger.error('Memory Recall failed', 'Brain', err);
       }
-    } catch (err) {
-      logger.error('Memory Recall failed', 'Brain', err);
-      return [];
     }
 
     const finalSystemPrompt = this.promptBuilder.build(this.skillsPrompt, memoryContext);

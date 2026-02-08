@@ -71,7 +71,8 @@ export class AgentRunner {
         message: string,
         options: {
             onDelta: (text: string) => void,
-            onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void
+            onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void,
+            onToolResult?: (payload: { name: string, success: boolean, error?: string }) => void
         },
         history: { role: string, content: string }[] = []
     ) {
@@ -79,28 +80,42 @@ export class AgentRunner {
         const tools = this.registry.getOpenAITools();
         const skillContext = this.buildContext();
 
-        // STEP 1: Try Deconstruction + Semantic Router (fast, deterministic)
+        // STEP 1: Try Semantic Router on the raw message first (fastest path)
+        const directRouteResult = await this.router.tryExecute(message, message, '', skillContext);
+        if (directRouteResult.handled && directRouteResult.success) {
+            const summary = await this.summarizeResults(message, [message], [{ action: message, result: directRouteResult.result || '' }], history, options.onDelta, formatter);
+            await this.autoCapture(message);
+            return summary;
+        }
+
+        // STEP 2: Try Deconstruction (handles multi-intent or complex queries)
         const actions = await this.deconstructMessage(message);
         const routerResults: { action: string, result: string }[] = [];
         let cumulativeContext = '';
 
-        for (const action of actions) {
-            logger.debug(`Executing step: "${action}"`, 'Runner');
+        // If deconstruction didn't actually split it, and we already tried direct route, 
+        // we skip the loop if the router already failed for this specific string.
+        if (actions.length === 1 && actions[0] === message && directRouteResult.handled === false) {
+            logger.debug('Skipping redundant router check after failed direct attempt', 'Runner');
+        } else {
+            for (const action of actions) {
+                logger.debug(`Executing step: "${action}"`, 'Runner');
 
-            const routeResult = await this.router.tryExecute(action, action, cumulativeContext, skillContext);
+                const routeResult = await this.router.tryExecute(action, action, cumulativeContext, skillContext);
 
-            if (routeResult.handled) {
-                if (routeResult.success) {
-                    logger.success(`Step success: ${routeResult.result}`, 'Runner');
-                    routerResults.push({ action, result: routeResult.result || '' });
-                    cumulativeContext += (cumulativeContext ? '\n' : '') + `Result of "${action}": ${routeResult.result}`;
+                if (routeResult.handled) {
+                    if (routeResult.success) {
+                        logger.success(`Step success: ${routeResult.result}`, 'Runner');
+                        routerResults.push({ action, result: routeResult.result || '' });
+                        cumulativeContext += (cumulativeContext ? '\n' : '') + `Result of "${action}": ${routeResult.result}`;
+                    } else {
+                        logger.error(`Step failed: ${routeResult.result}`, 'Runner');
+                        routerResults.push({ action, result: `ERROR: ${routeResult.result}` });
+                        break;
+                    }
                 } else {
-                    logger.error(`Step failed: ${routeResult.result}`, 'Runner');
-                    routerResults.push({ action, result: `ERROR: ${routeResult.result}` });
-                    break;
+                    logger.info(`Step not handled by router: ${action}`, 'Runner');
                 }
-            } else {
-                logger.info(`Step not handled by router: ${action}`, 'Runner');
             }
         }
 
@@ -110,7 +125,7 @@ export class AgentRunner {
             return summary;
         }
 
-        // STEP 2: Fall back to full LLM with tools
+        // STEP 3: Fall back to full LLM with tools
         const currentHistory = [...history];
         let currentMessage = message;
         let accumulatedResponse = '';
@@ -126,7 +141,7 @@ export class AgentRunner {
             currentHistory.push({ role: 'assistant', content: fullResponse });
 
             if (toolCalls && toolCalls.length > 0) {
-                const results = await this.executeToolCalls(toolCalls, options.onToolCall);
+                const results = await this.executeToolCalls(toolCalls, options.onToolCall, options.onToolResult);
                 currentMessage = `Tool results: ${JSON.stringify(results)}. Please continue if the task is not complete, or provide a final answer.`;
                 iterations++;
             } else {
@@ -172,7 +187,8 @@ export class AgentRunner {
 
     private async executeToolCalls(
         toolCalls: ToolCall[],
-        onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void
+        onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void,
+        onToolResult?: (payload: { name: string, success: boolean, error?: string }) => void
     ): Promise<{ tool: string; result: unknown }[]> {
         const results: { tool: string; result: unknown }[] = [];
         logger.info(`Executing ${toolCalls.length} tool call(s).`, 'Runner');
@@ -209,7 +225,15 @@ export class AgentRunner {
             onToolCall?.({ name, args });
             logger.info(`Executing tool: ${name}`, 'Runner');
 
-            const result = await this.registry.execute(name, args, context);
+            let result: { success: boolean; error?: string };
+            try {
+                result = await this.registry.execute(name, args, context);
+            } catch (err) {
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                logger.warn(`Tool ${name} threw: ${errorMessage}`, 'Runner');
+                result = { success: false, error: errorMessage };
+            }
+
             if (result.success) {
                 logger.success(`Tool ${name} succeeded.`, 'Runner');
             } else {
@@ -218,6 +242,7 @@ export class AgentRunner {
                     : 'unknown error';
                 logger.warn(`Tool ${name} failed: ${safeError}`, 'Runner');
             }
+            onToolResult?.({ name, success: result.success, error: result.error as string | undefined });
             results.push({ tool: name, result });
         }
 

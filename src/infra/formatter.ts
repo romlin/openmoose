@@ -142,10 +142,13 @@ export class StreamingFormatter {
               }
             }
 
-            // Strip tags and Markdown symbols for streaming
-            const cleanToEmit = toEmit
-              .replace(/<\/?final>/gi, '')
-              .replace(/\*\*|__|#+|\*|_/g, '');
+            // Strip tags and Markdown symbols for streaming (only if symbols are present)
+            let cleanToEmit = toEmit;
+            if (cleanToEmit.includes('<') || cleanToEmit.includes('*') || cleanToEmit.includes('#') || cleanToEmit.includes('_')) {
+              cleanToEmit = cleanToEmit
+                .replace(/<\/?final>/gi, '')
+                .replace(/\*\*|__|#+|\*|_/g, '');
+            }
             output += cleanToEmit;
             this.buffer = this.buffer.substring(emitUntil);
           }

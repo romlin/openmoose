@@ -17,12 +17,14 @@ import { printBanner, printStatus, printHint } from '../infra/banner.js';
 const program = new Command();
 
 interface GatewayMessage {
-    type: 'agent.run' | 'agent.delta' | 'agent.audio' | 'agent.tool_call' | 'agent.final' | 'error';
+    type: 'agent.run' | 'agent.delta' | 'agent.audio' | 'agent.tool_call' | 'agent.tool_result' | 'agent.final' | 'error';
     text?: string;
     message?: string;
     audio?: string;
     name?: string;
     args?: Record<string, unknown>;
+    success?: boolean;
+    error?: string;
 }
 
 /**
@@ -43,16 +45,39 @@ class MooseClient {
     /** Prefix shown before assistant responses. */
     private static readonly RESPONSE_PREFIX = '\n' + chalk.bold.cyan('moose') + chalk.dim(' › ');
 
+    private port: string;
+
     constructor(port: string) {
+        this.port = port;
         this.ws = new WebSocket(`ws://localhost:${port}`);
     }
 
     async connect(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.ws.on('open', () => resolve());
-            this.ws.on('error', (err) => reject(err));
-            this.ws.on('message', (data) => this.handleMessage(data));
-        });
+        let attempts = 0;
+        const maxAttempts = 5;
+
+        while (attempts < maxAttempts) {
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    this.ws.on('open', () => resolve());
+                    this.ws.on('error', (err) => reject(err));
+                    this.ws.on('message', (data) => this.handleMessage(data));
+                });
+                return;
+            } catch (err) {
+                attempts++;
+                if (attempts >= maxAttempts) throw err;
+
+                printStatus('Gateway', chalk.yellow(`not ready, retrying... (${attempts}/${maxAttempts})`));
+
+                // Re-initialize WebSocket for the next attempt
+                this.ws.removeAllListeners();
+                this.ws.terminate();
+                this.ws = new WebSocket(`ws://localhost:${this.port}`);
+
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
     }
 
     async run(message: string, voice = false) {
@@ -170,6 +195,12 @@ class MooseClient {
                 break;
             }
 
+            case 'agent.tool_result':
+                if (payload.success !== true && payload.error) {
+                    process.stdout.write(chalk.dim('  ↳ ') + chalk.red('failed: ' + payload.error) + '\n');
+                }
+                break;
+
             case 'agent.final':
                 process.stdout.write('\n\n');
                 this.responseStarted = false;
@@ -179,6 +210,7 @@ class MooseClient {
             case 'error':
                 console.error(chalk.red('\n  Error:'), payload.message);
                 this.responseStarted = false;
+                this.rl?.prompt();
                 break;
         }
     }
