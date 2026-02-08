@@ -14,13 +14,13 @@ pnpm gateway            # start the gateway (terminal 1)
 pnpm dev talk           # interactive chat (terminal 2)
 ```
 
-Local LLM via Ollama. Sandboxed code execution. Vector memory. WhatsApp. Voice. Extensible YAML skills. Zero cloud dependency.
+Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp. Voice. Extensible YAML skills. Zero cloud dependency.
 
 ## Features
 
-- **Local Brain** -- Powered by [Ollama](https://ollama.com) (Ministral-3 3B default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
-- **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via embeddings, bypassing the LLM entirely for zero-latency responses.
-- **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents for deep knowledge retrieval.
+- **Local Brain** -- Powered by an integrated local engine (`node-llama-cpp`, Ministral-8B Reasoning default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
+- **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via local embeddings (Transformers.js), bypassing the LLM entirely for zero-latency responses.
+- **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents using local embeddings.
 - **Secure Sandbox** -- All code execution happens inside non-privileged, read-only Docker containers with dropped capabilities and resource limits.
 - **WhatsApp Integration** -- Chat with your assistant through WhatsApp. Responds to DMs automatically and to group messages prefixed with "moose".
 - **Voice Output** -- Text-to-speech via Supertonic 2 ONNX models (167x faster than real-time, 10 voice styles, 5 languages).
@@ -35,7 +35,6 @@ Local LLM via Ollama. Sandboxed code execution. Vector memory. WhatsApp. Voice. 
 | [Node.js](https://nodejs.org) | >= 20.0.0 | Runtime |
 | [Docker](https://docker.com) | Latest | Sandbox execution |
 | [git-lfs](https://git-lfs.com) | Latest | TTS model download |
-| [Ollama](https://ollama.com) | Latest | Local LLM + embeddings |
 | [pnpm](https://pnpm.io) | Latest | Package manager |
 
 ## Quick Start
@@ -108,12 +107,11 @@ Copy `.env.example` to `.env` and customize:
 # Gateway
 GATEWAY_PORT=18789              # HTTP/WebSocket server port
 
-# LLM Provider ('ollama' for local, 'mistral' for cloud)
-LLM_PROVIDER=ollama
+# LLM Provider ('node-llama-cpp' for local, 'mistral' for cloud)
+LLM_PROVIDER=node-llama-cpp
 
-# Ollama (local)
-OLLAMA_HOST=http://127.0.0.1:11434
-OLLAMA_MODEL=ministral-3:3b
+# Local LLM (node-llama-cpp)
+LLAMA_CPP_MODEL_PATH=models/llama-cpp/ministral-8b-reasoning-q4km.gguf
 
 # Mistral AI (cloud)
 MISTRAL_MODEL=mistral-large-latest
@@ -200,8 +198,9 @@ The LLM has access to these tools for complex tasks:
 │                                                   │
 │  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
 │  │  Brain   │  │  Memory  │  │ Semantic Router │  │
-│  │ Ollama/  │  │ LanceDB  │  │  Embedding-     │  │
-│  │ Mistral  │  │ + Ollama │  │  based matching │  │
+│  │ node-    │  │ LanceDB  │  │  Embedding-     │  │
+│  │ llama-cpp│  │ + Trans- │  │  based matching │  │
+│  │ /Mistral │  │ formers  │  │                 │  │
 │  └─────────┘  └──────────┘  └─────────────────┘  │
 │                                                   │
 │  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
@@ -284,7 +283,8 @@ OpenMoose is built on these open-source projects and models:
 | [Hono](https://hono.dev) | MIT | Yes | Web framework |
 | [js-yaml](https://github.com/nodeca/js-yaml) | MIT | Yes | YAML parsing |
 | [LanceDB](https://lancedb.com) | Apache-2.0 | Yes | Vector database |
-| [Ollama](https://ollama.com) | MIT | Yes | Local LLM client |
+| [node-llama-cpp](https://node-llama-cpp.js.org/) | MIT | Yes | Integrated LLM engine |
+| [@huggingface/transformers](https://huggingface.co/docs/transformers.js) | Apache-2.0 | Yes | Integrated embeddings engine |
 | [ONNX Runtime](https://onnxruntime.ai) | MIT | Yes | ML inference engine (TTS) |
 | [Ora](https://github.com/sindresorhus/ora) | MIT | Yes | Terminal spinners |
 | [Pino](https://getpino.io) | MIT | Yes | Logger |
@@ -297,8 +297,8 @@ OpenMoose is built on these open-source projects and models:
 
 | Model | License | Commercial | Description |
 |---|---|---|---|
-| [Ministral-3 3B](https://ollama.com/library/ministral-3) | Apache-2.0 | Yes | Default LLM (via Ollama) |
-| [nomic-embed-text](https://ollama.com/library/nomic-embed-text) | Apache-2.0 | Yes | Embedding model (via Ollama) |
+| [Ministral-8B Reasoning](https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF) | Apache-2.0 | Yes | Default LLM (integrated GGUF) |
+| [all-MiniLM-L6-v2](https://huggingface.co/xenova/all-MiniLM-L6-v2) | Apache-2.0 | Yes | Embedding model (integrated) |
 | [Supertonic 2](https://huggingface.co/Supertone/supertonic-2) | Open RAIL-M | Conditional | Text-to-speech (ONNX) |
 
 ### Dev Dependencies

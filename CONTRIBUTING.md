@@ -44,7 +44,7 @@ The easiest way to contribute is by adding YAML skills in the `skills/` director
 Open a GitHub issue with:
 - What you expected vs. what happened
 - Steps to reproduce
-- Your environment (OS, Node version, Ollama version)
+- Your environment (OS, Node version)
 
 ## Code of Conduct
 

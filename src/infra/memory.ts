@@ -1,16 +1,16 @@
 /**
  * Vector-based long-term memory backed by LanceDB.
  * Stores conversation facts and indexes local Markdown documents
- * for semantic retrieval using Ollama embeddings.
+ * for semantic retrieval using local embeddings.
  */
 
 import * as lancedb from '@lancedb/lancedb';
-import { Ollama } from 'ollama';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { config } from '../config/index.js';
 import { logger } from './logger.js';
+import { EmbeddingProvider } from './embeddings.js';
 
 /** A single memory record stored in the vector database. */
 export interface MemoryEntry {
@@ -24,56 +24,52 @@ export interface MemoryEntry {
 
 /**
  * Semantic memory store using LanceDB for vector search and
- * Ollama (nomic-embed-text) for embedding generation.
+ * Transformers.js (local) for embedding generation.
  */
 export class LocalMemory {
   private db: lancedb.Connection | null = null;
   private table: lancedb.Table | null = null;
-  private ollama: Ollama;
   private dbPath: string;
-  private embeddingModel: string;
+  private embedder: EmbeddingProvider;
 
-  constructor(options: { dbPath?: string, ollamaHost?: string, embeddingModel?: string } = {}) {
+  constructor(options: { dbPath?: string, embeddingModel?: string } = {}) {
     this.dbPath = options.dbPath || path.resolve(process.cwd(), config.memory.dbPath);
-    this.ollama = new Ollama({ host: options.ollamaHost || config.brain.ollama.host });
-    this.embeddingModel = options.embeddingModel || 'nomic-embed-text';
+    this.embedder = EmbeddingProvider.getInstance(options.embeddingModel);
   }
 
   private async ensureInitialized() {
     if (this.table) return;
 
-    await fs.mkdir(this.dbPath, { recursive: true });
-    this.db = await lancedb.connect(this.dbPath);
+    if (!this.table) {
+      await fs.mkdir(this.dbPath, { recursive: true });
+      this.db = await lancedb.connect(this.dbPath);
 
-    const tableNames = await this.db.tableNames();
-    const tableName = 'memories_v2'; // Versioned table name for schema evolution
+      const tableNames = await this.db.tableNames();
+      const tableName = 'memories_v3'; // Increment version for new embedding space
 
-    if (tableNames.includes(tableName)) {
-      this.table = await this.db.openTable(tableName);
-    } else {
-      // Get a dummy embedding to determine dimension
-      const dummy = await this.getEmbedding("dummy");
-      this.table = await this.db.createTable(tableName, [
-        {
-          id: randomUUID(),
-          text: "initialization",
-          source: 'chat',
-          metadata: '{}',
-          vector: dummy,
-          createdAt: Date.now()
-        }
-      ]);
-      // Remove initialization entry
-      await this.table.delete('text = "initialization"');
+      if (tableNames.includes(tableName)) {
+        this.table = await this.db.openTable(tableName);
+      } else {
+        // Get a dummy embedding to determine dimension
+        const dummy = await this.getEmbedding("dummy");
+        this.table = await this.db.createTable(tableName, [
+          {
+            id: randomUUID(),
+            text: "initialization",
+            source: 'chat',
+            metadata: '{}',
+            vector: dummy,
+            createdAt: Date.now()
+          }
+        ]);
+        // Remove initialization entry
+        await this.table.delete('text = "initialization"');
+      }
     }
   }
 
   private async getEmbedding(text: string): Promise<number[]> {
-    const response = await this.ollama.embeddings({
-      model: this.embeddingModel,
-      prompt: text,
-    });
-    return response.embedding;
+    return this.embedder.getEmbedding(text);
   }
 
   /**

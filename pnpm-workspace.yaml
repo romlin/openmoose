@@ -7,4 +7,6 @@ ignoredBuiltDependencies:
 onlyBuiltDependencies:
   - '@whiskeysockets/baileys'
   - esbuild
+  - node-llama-cpp
   - protobufjs
+  - sharp

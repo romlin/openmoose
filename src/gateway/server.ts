@@ -257,11 +257,11 @@ export class LocalGateway {
         });
 
         // Brain + Runner
-        const model = config.brain.provider === 'mistral' ? config.brain.mistral.model : config.brain.ollama.model;
+        const modelName = config.brain.provider === 'mistral' ? config.brain.mistral.model : path.basename(config.brain.llamaCpp.modelPath);
         this.brain = new LocalBrain({ memory: this.memory, registry: this.skillRegistry, skillsPrompt: this.skillsPrompt });
         this.runner = new AgentRunner(this.brain, this.memory, this.sandbox, this.skillRegistry, this.scheduler, this.whatsapp);
         await this.runner.init();
-        printStatus('Brain', `${config.brain.provider} · ${model}`);
+        printStatus('Brain', `${config.brain.provider} · ${modelName}`);
 
         // Scheduler start
         await this.scheduler.init();

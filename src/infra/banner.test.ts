@@ -37,10 +37,10 @@ describe('banner', () => {
     });
 
     it('printStatus outputs label and detail', () => {
-        printStatus('Brain', 'ollama · ministral');
+        printStatus('Brain', 'node-llama-cpp · ministral');
         expect(logs.length).toBe(1);
         expect(logs[0]).toContain('Brain');
-        expect(logs[0]).toContain('ollama');
+        expect(logs[0]).toContain('node-llama-cpp');
     });
 
     it('printPending outputs label and detail', () => {

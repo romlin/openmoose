@@ -13,14 +13,14 @@ export const config = {
     },
 
     brain: {
-        provider: (process.env.LLM_PROVIDER || 'ollama') as 'ollama' | 'mistral',
-        ollama: {
-            host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
-            model: process.env.OLLAMA_MODEL || 'ministral-3:3b',
-        },
+        provider: (process.env.LLM_PROVIDER || 'node-llama-cpp') as 'mistral' | 'node-llama-cpp',
         mistral: {
             model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
             apiKey: process.env.MISTRAL_API_KEY,
+        },
+        llamaCpp: {
+            modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(process.cwd(), 'models/llama-cpp/ministral-8b-reasoning-q4km.gguf'),
+            gpu: (process.env.LLAMA_CPP_GPU === 'false' ? false : (process.env.LLAMA_CPP_GPU || 'auto')) as 'auto' | 'metal' | 'cuda' | 'vulkan' | false,
         }
     },
 

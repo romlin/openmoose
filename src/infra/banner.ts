@@ -48,7 +48,7 @@ export function printBanner(subtitle?: string): void {
     console.log('');
 }
 
-/** Print a service status line (e.g. "  ✓ Brain         ollama · model"). */
+/** Print a service status line (e.g. "  ✓ Brain         node-llama-cpp · model"). */
 export function printStatus(label: string, detail: string): void {
     console.log(`  ${chalk.green('✓')} ${chalk.bold(label.padEnd(14))}${chalk.dim(detail)}`);
 }

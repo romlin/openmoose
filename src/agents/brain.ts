@@ -1,6 +1,6 @@
 /**
  * LocalBrain -- LLM interface using the OpenAI-compatible chat completions API.
- * Supports both local (Ollama) and cloud (Mistral) providers with streaming,
+ * Supports both local (integrated) and cloud (Mistral) providers with streaming,
  * tool calling, and automatic memory context injection.
  */
 
@@ -25,6 +25,12 @@ export class LocalBrain {
   private promptBuilder: PromptBuilder;
   private skillsPrompt?: string;
 
+  // node-llama-cpp members
+  private llama?: import('node-llama-cpp').Llama;
+  private llamaModel?: import('node-llama-cpp').LlamaModel;
+  private llamaContext?: import('node-llama-cpp').LlamaContext;
+  private llamaChat?: import('node-llama-cpp').LlamaChat;
+
   constructor(options: BrainOptions) {
     const provider = config.brain.provider;
 
@@ -33,13 +39,46 @@ export class LocalBrain {
       this.baseUrl = (options.host || 'https://api.mistral.ai').replace(/\/$/, '') + '/v1';
       this.model = options.model || config.brain.mistral.model;
     } else {
-      this.baseUrl = (options.host || config.brain.ollama.host).replace(/\/$/, '') + '/v1';
-      this.model = options.model || config.brain.ollama.model;
+      // Default/Local provider: node-llama-cpp
+      this.baseUrl = ''; // Local, no base URL
+      this.model = config.brain.llamaCpp.modelPath;
     }
 
     this.memory = options.memory;
     this.skillsPrompt = options.skillsPrompt;
     this.promptBuilder = new PromptBuilder(options.registry);
+  }
+
+  private async ensureLlamaInitialized() {
+    if (this.llamaChat) return;
+
+    try {
+      // Lazy load to avoid forcing dependency if not used
+      const { getLlama, LlamaChat, LlamaLogLevel } = await import('node-llama-cpp');
+      this.llama = await getLlama({
+        gpu: config.brain.llamaCpp.gpu,
+        logLevel: LlamaLogLevel.error, // Suppress non-fatal warnings
+        logger: (level, message) => {
+          // Direct library logs to our logger
+          if (level === LlamaLogLevel.fatal || level === LlamaLogLevel.error) {
+            logger.error(message, 'LlamaCPP');
+          } else if (config.logging.level === 'debug') {
+            logger.debug(message, 'LlamaCPP');
+          }
+        }
+      });
+      this.llamaModel = await this.llama.loadModel({
+        modelPath: config.brain.llamaCpp.modelPath
+      });
+      this.llamaContext = await this.llamaModel.createContext();
+      this.llamaChat = new LlamaChat({
+        contextSequence: this.llamaContext.getSequence()
+      });
+      logger.info(`node-llama-cpp initialized with model: ${config.brain.llamaCpp.modelPath}`, 'Brain');
+    } catch (err) {
+      logger.error('Failed to initialize node-llama-cpp', 'Brain', err);
+      throw new Error(`Inference engine initialization failed: ${String(err)}`);
+    }
   }
 
   private getHeaders(): Record<string, string> {
@@ -105,6 +144,42 @@ export class LocalBrain {
     history: { role: string; content: string }[] = [],
     tools?: OpenAITool[]
   ): Promise<ChatResult> {
+    if (config.brain.provider === 'node-llama-cpp' || config.brain.provider !== 'mistral') {
+      const { systemPrompt } = await this.prepareLlamaExecution(message, history);
+      await this.ensureLlamaInitialized();
+
+
+      const functions = this.mapOpenAIToolsToLlamaFunctions(tools);
+      const llamaHistory = await this.mapHistoryToLlamaHistory(history, systemPrompt);
+
+      const response = await this.llamaChat!.generateResponse([
+        ...llamaHistory,
+        { type: 'user', text: message }
+      ], {
+        functions: Object.keys(functions).length > 0 ? functions : undefined
+      });
+
+      const toolCalls: ToolCall[] = [];
+      if (response.functionCalls) {
+        for (const fc of response.functionCalls) {
+          toolCalls.push({
+            id: `call_${Math.random().toString(36).slice(2)}`,
+            type: 'function',
+            function: {
+              name: fc.functionName,
+              arguments: JSON.stringify(fc.params)
+            }
+          });
+        }
+      }
+
+      return {
+        content: response.response,
+        toolCalls,
+        finishReason: response.metadata.stopReason === 'functionCalls' ? 'tool_calls' : 'stop',
+      };
+    }
+
     const messages = await this.prepareMessages(message, history);
     const body = this.buildRequestBody(messages, false, tools);
 
@@ -140,6 +215,80 @@ export class LocalBrain {
     history: { role: string; content: string }[] = [],
     tools?: OpenAITool[]
   ): AsyncGenerator<{ content?: string; toolCalls?: ToolCall[]; done: boolean }> {
+    if (config.brain.provider === 'node-llama-cpp' || config.brain.provider !== 'mistral') {
+      const { systemPrompt } = await this.prepareLlamaExecution(message, history);
+      await this.ensureLlamaInitialized();
+
+
+      // Manual queue to convert callback to AsyncGenerator
+      const queue: (string | null)[] = [];
+      let resolver: ((value: string | null) => void) | null = null;
+
+      const push = (chunk: string | null) => {
+        if (resolver) {
+          resolver(chunk);
+          resolver = null;
+        } else {
+          queue.push(chunk);
+        }
+      };
+
+      const pull = (): Promise<string | null> => {
+        if (queue.length > 0) return Promise.resolve(queue.shift()!);
+        return new Promise(resolve => { resolver = resolve; });
+      };
+
+      // Start inference in "background"
+      const functions = this.mapOpenAIToolsToLlamaFunctions(tools);
+      this.mapHistoryToLlamaHistory(history, systemPrompt).then(llamaHistory => {
+        this.llamaChat!.generateResponse([
+          ...llamaHistory,
+          { type: 'user', text: message }
+        ], {
+          onTextChunk: (chunk: string) => push(chunk),
+          functions: Object.keys(functions).length > 0 ? functions : undefined
+        }).then((response) => {
+          const toolCalls: ToolCall[] = [];
+          if (response.functionCalls) {
+            for (const fc of response.functionCalls) {
+              toolCalls.push({
+                id: `call_${Math.random().toString(36).slice(2)}`,
+                type: 'function',
+                function: {
+                  name: fc.functionName,
+                  arguments: JSON.stringify(fc.params)
+                }
+              });
+            }
+          }
+
+          if (toolCalls.length > 0) {
+            // We yield tool calls at the very end of the stream
+            push(`__TOOL_CALLS__${JSON.stringify(toolCalls)}`);
+          }
+          push(null);
+        }).catch((err: unknown) => {
+          logger.error('node-llama-cpp prompt failed', 'Brain', err);
+          push(null);
+        });
+      });
+
+      let capturedToolCalls: ToolCall[] | undefined;
+
+      while (true) {
+        const chunk = await pull();
+        if (chunk === null) break;
+        if (chunk.startsWith('__TOOL_CALLS__')) {
+          capturedToolCalls = JSON.parse(chunk.slice(14)) as ToolCall[];
+          continue;
+        }
+        yield { content: chunk, done: false };
+      }
+
+      yield { toolCalls: capturedToolCalls, done: true };
+      return;
+    }
+
     const messages = await this.prepareMessages(message, history);
     const body = this.buildRequestBody(messages, true, tools);
 
@@ -216,21 +365,59 @@ export class LocalBrain {
   /** Check if the LLM backend is reachable and the configured model is available. */
   async healthCheck() {
     try {
-      if (this.mistralApiKey) {
-        return { ok: true, host: this.baseUrl, model: this.model, isCloud: true };
+      if (config.brain.provider === 'node-llama-cpp' || config.brain.provider !== 'mistral') {
+        const fs = await import('node:fs/promises');
+        const exists = await fs.access(config.brain.llamaCpp.modelPath).then(() => true).catch(() => false);
+        return {
+          ok: exists,
+          host: 'local',
+          model: config.brain.llamaCpp.modelPath,
+          modelInstalled: exists
+        };
       }
 
-      const response = await fetch(`${this.baseUrl.replace('/v1', '')}/api/tags`);
-      if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
-      const data = await response.json() as { models: Array<{ name: string }> };
-      return {
-        ok: true,
-        host: this.baseUrl,
-        model: this.model,
-        modelInstalled: data.models.some(m => m.name.includes(this.model))
-      };
+      return { ok: true, host: this.baseUrl, model: this.model, isCloud: true };
     } catch (error) {
       return { ok: false, host: this.baseUrl, error: String(error) };
     }
+  }
+
+  private async prepareLlamaExecution(message: string, history: { role: string; content: string }[]) {
+    const templateMessages = await this.prepareMessages(message, history);
+    const systemPrompt = templateMessages.find(m => m.role === 'system')?.content ?? undefined;
+    return { systemPrompt };
+  }
+
+  private async mapHistoryToLlamaHistory(history: { role: string; content: string }[], systemPrompt?: string): Promise<any[]> {
+    const llamaHistory: any[] = [];
+    if (systemPrompt) {
+      llamaHistory.push({ type: 'system', text: systemPrompt });
+    }
+    for (const h of history) {
+      if (h.role === 'system') {
+        // We already added the most current system prompt
+        continue;
+      } else if (h.role === 'user') {
+        llamaHistory.push({ type: 'user', text: h.content });
+      } else if (h.role === 'assistant') {
+        llamaHistory.push({ type: 'model', response: [h.content || ''] });
+      }
+    }
+    return llamaHistory;
+  }
+
+  private mapOpenAIToolsToLlamaFunctions(tools?: OpenAITool[]): any {
+    if (!tools || tools.length === 0) return {};
+
+    const functions: any = {};
+    for (const tool of tools) {
+      if (tool.type === 'function') {
+        functions[tool.function.name] = {
+          description: tool.function.description,
+          params: tool.function.parameters
+        };
+      }
+    }
+    return functions;
   }
 }

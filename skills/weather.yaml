@@ -11,6 +11,9 @@ examples:
   - "is it raining in paris"
   - "Get the current weather in Malmö"
   - "Find the weather in Tokyo"
+  - "Get the current weather in New York"
+  - "whats the weather"
+  - "weather"
 args:
   city:
     patterns:

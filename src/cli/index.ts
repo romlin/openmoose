@@ -99,7 +99,9 @@ class MooseClient {
     }
 
     async startInteractive(voice = false) {
-        const model = config.brain.provider === 'ollama' ? config.brain.ollama.model : config.brain.mistral.model;
+        const model = config.brain.provider === 'mistral'
+            ? config.brain.mistral.model
+            : join('models/llama-cpp', config.brain.llamaCpp.modelPath).split('/').pop();
 
         printBanner('Talk Mode');
         printStatus('Brain', `${config.brain.provider} · ${model}`);

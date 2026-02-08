@@ -1,19 +1,18 @@
 /**
  * Embedding-based semantic router for fast, deterministic intent matching.
- * Uses Ollama embeddings to compare user messages against skill examples
+ * Uses local embeddings to compare user messages against skill examples
  * and routes to the best-matching skill when confidence exceeds thresholds.
  */
 
-import { config } from '../config/index.js';
 import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
-import { Ollama } from 'ollama';
+import { EmbeddingProvider } from '../infra/embeddings.js';
 
 /** Minimum confidence for routing a message to a skill. */
 const ROUTE_THRESHOLD = 0.5;
 
 /** Minimum confidence for actually executing the skill. */
-const EXECUTE_THRESHOLD = 0.72;
+const EXECUTE_THRESHOLD = 0.68;
 
 /**
  * Skill definition with example phrases for semantic matching
@@ -38,15 +37,13 @@ interface RouteMatch {
  * Bypasses LLM for intent detection, giving deterministic and fast routing
  */
 export class SemanticRouter {
-    private ollama: Ollama;
-    private embeddingModel: string;
+    private embedder: EmbeddingProvider;
     private routes: SkillRoute[] = [];
     private routeEmbeddings: Map<string, number[][]> = new Map();
     private initialized = false;
 
-    constructor(options: { ollamaHost?: string; embeddingModel?: string } = {}) {
-        this.ollama = new Ollama({ host: options.ollamaHost || config.brain.ollama.host });
-        this.embeddingModel = options.embeddingModel || 'nomic-embed-text';
+    constructor(options: { embeddingModel?: string } = {}) {
+        this.embedder = EmbeddingProvider.getInstance(options.embeddingModel);
     }
 
     register(route: SkillRoute): void {
@@ -70,11 +67,7 @@ export class SemanticRouter {
     }
 
     private async getEmbedding(text: string): Promise<number[]> {
-        const response = await this.ollama.embeddings({
-            model: this.embeddingModel,
-            prompt: text,
-        });
-        return response.embedding;
+        return this.embedder.getEmbedding(text);
     }
 
     private cosineSimilarity(a: number[], b: number[]): number {
@@ -129,6 +122,11 @@ export class SemanticRouter {
         const match = await this.route(message, ROUTE_THRESHOLD);
 
         if (!match || match.confidence < EXECUTE_THRESHOLD) {
+            if (match) {
+                logger.debug(`Match found for "${match.skill.name}" but confidence (${(match.confidence * 100).toFixed(1)}%) is below threshold (${(EXECUTE_THRESHOLD * 100).toFixed(1)}%)`, 'Router');
+            } else {
+                logger.debug(`No skill match found for "${message}"`, 'Router');
+            }
             return {
                 handled: false,
                 confidence: match?.confidence,
