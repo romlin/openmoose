@@ -42,9 +42,10 @@ export class EmbeddingProvider {
         if (this.extractor) return;
 
         try {
+            logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
             const { pipeline } = await import('@huggingface/transformers');
-            this.extractor = (await pipeline('feature-extraction', this.modelName)) as unknown as FeatureExtractionPipeline;
-            logger.info(`Embedding engine initialized: ${this.modelName}`, 'Embeddings');
+            this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
+            logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
         } catch (err) {
             logger.error('Failed to initialize embedding engine', 'Embeddings', err);
             throw err;
