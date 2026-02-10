@@ -207,7 +207,7 @@ export class WhatsAppManager extends EventEmitter {
         let changed = false;
         for (const c of contacts) {
             const name = c.name || c.notify || c.verifiedName;
-            if (name && c.id) {
+            if (name && c.id && this.contacts[name] !== c.id) {
                 this.contacts[name] = c.id;
                 changed = true;
             }

@@ -47,6 +47,13 @@ COPY --from=builder /app/skills ./skills
 # Re-copy the browser daemon and Dockerfile for runtime builds
 COPY src/runtime/browser/daemon.js src/runtime/browser/Dockerfile ./dist/runtime/browser/
 
+# Create a dedicated non-root user.
+# NOTE: The user is added to the "docker" group so the gateway can manage
+# sandbox / browser containers via the mounted Docker socket. If the socket
+# is not mounted this group membership is harmless.
+RUN groupadd -r appuser && useradd -r -g appuser -G docker -d /app appuser \
+    && chown -R appuser:appuser /app
+
 # Default environment variables
 ENV NODE_ENV=production
 ENV GATEWAY_PORT=18789
@@ -56,6 +63,8 @@ ENV LLAMA_CPP_MODEL_PATH=/app/models/llama-cpp/ministral-8b-reasoning-q4km.gguf
 
 # Expose the gateway port
 EXPOSE 18789
+
+USER appuser
 
 # Run the gateway
 CMD ["node", "dist/gateway/server.js"]

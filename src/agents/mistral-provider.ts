@@ -4,6 +4,7 @@
  */
 
 import { config } from '../config/index.js';
+import { getErrorMessage } from '../infra/errors.js';
 import type { OpenAIMessage, OpenAITool, ToolCall, ChatResult, ChatResponse } from './types.js';
 import type { BrainProvider } from './providers.js';
 
@@ -137,7 +138,18 @@ export class MistralProvider implements BrainProvider {
         }
     }
 
-    async healthCheck() {
-        return { ok: true, host: this.baseUrl, model: this.model, isCloud: true };
+    async healthCheck(): Promise<{ ok: boolean; host: string; model: string; isCloud: true; status?: string }> {
+        try {
+            const res = await fetch(`${this.baseUrl}/models`, {
+                method: 'GET',
+                headers: this.getHeaders(),
+            });
+            if (!res.ok) {
+                return { ok: false, host: this.baseUrl, model: this.model, isCloud: true, status: `HTTP ${res.status}` };
+            }
+            return { ok: true, host: this.baseUrl, model: this.model, isCloud: true };
+        } catch (err) {
+            return { ok: false, host: this.baseUrl, model: this.model, isCloud: true, status: getErrorMessage(err) };
+        }
     }
 }

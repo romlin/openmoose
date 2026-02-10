@@ -5,6 +5,11 @@ services:
     ports:
       - "${GATEWAY_PORT:-18789}:${GATEWAY_PORT:-18789}"
     volumes:
+      # SECURITY: The Docker socket is required so the gateway can manage
+      # short-lived sandbox and browser containers (build images, start/stop).
+      # This grants full Docker daemon access — only expose the gateway on
+      # trusted networks.  For hardened deployments consider a socket-proxy
+      # such as tecnativa/docker-socket-proxy with limited API access.
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.moose:/app/.moose
       - ./models:/app/models

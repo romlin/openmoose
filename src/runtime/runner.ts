@@ -195,16 +195,36 @@ export class AgentRunner {
             } catch (err) {
                 const raw = tc.function.arguments?.trim() || '';
                 // LLMs sometimes concatenate multiple JSON objects ("{}{}").
-                // Try to split on `}{` boundaries and use the first valid object.
-                const parts = raw.includes('}{')
-                    ? raw.split(/(?<=\})(?=\{)/)
-                    : [];
+                // Use bracket-counting to split top-level objects safely,
+                // respecting string literals so `}{` inside strings is ignored.
+                const parts: string[] = [];
+                let depth = 0;
+                let inString = false;
+                let escape = false;
+                let start = -1;
+                for (let i = 0; i < raw.length; i++) {
+                    const ch = raw[i];
+                    if (escape) { escape = false; continue; }
+                    if (ch === '\\' && inString) { escape = true; continue; }
+                    if (ch === '"') { inString = !inString; continue; }
+                    if (inString) continue;
+                    if (ch === '{') { if (depth === 0) start = i; depth++; }
+                    else if (ch === '}') {
+                        depth--;
+                        if (depth === 0 && start !== -1) {
+                            parts.push(raw.slice(start, i + 1));
+                            start = -1;
+                        }
+                    }
+                }
                 let recovered = false;
-                if (parts.length > 1) {
+                if (parts.length > 0) {
                     try {
                         args = JSON.parse(parts[0]);
                         recovered = true;
-                        logger.warn(`Recovered first of ${parts.length} concatenated JSON objects for ${name}.`, 'Runner');
+                        if (parts.length > 1) {
+                            logger.warn(`Recovered first of ${parts.length} concatenated JSON objects for ${name}.`, 'Runner');
+                        }
                     } catch { /* fall through to _raw */ }
                 }
                 if (!recovered) {
@@ -224,9 +244,9 @@ export class AgentRunner {
                 result = await this.registry.execute(name, args, context);
             } catch (err) {
                 const errorMessage = getErrorMessage(err);
-                const safeError = typeof errorMessage === 'string' ? errorMessage.slice(0, 120) : 'unknown error';
-                logger.error(`Critical tool failure in ${name}: ${safeError}`, 'Runner');
-                result = { success: false, error: `Execution error: ${errorMessage}` };
+                const errorTrunc = errorMessage.length > 200 ? `${errorMessage.slice(0, 200)}...` : errorMessage;
+                logger.error(`Critical tool failure in ${name}: ${errorTrunc}`, 'Runner');
+                result = { success: false, error: `Execution error: ${errorTrunc}` };
             }
 
             if (result.success) {

@@ -50,18 +50,35 @@ const BrowserActionSchema = ActionEntrySchema.extend({
  * Handles LLM-friendly shorthands (e.g. `{ url: "..." }` → navigate).
  */
 function normalizeActions(args: z.infer<typeof BrowserActionSchema>): ActionEntry[] {
-    const list: ActionEntry[] = [...(args.actions || [])];
+    const list: ActionEntry[] = [];
 
-    const type = args.type || args.action;
+    // Process entries from the actions array, resolving type for each
+    for (const entry of (args.actions || [])) {
+        let url = entry.url;
+        if (!url && (entry as Record<string, unknown>)._raw) {
+            const raw = String((entry as Record<string, unknown>)._raw).trim();
+            if (raw.startsWith('http')) url = raw;
+        }
+        const resolved = entry.type || entry.action || (url ? 'navigate' : undefined);
+        if (!resolved) continue; // skip malformed entries with no type
+        list.push({
+            type: resolved,
+            url,
+            element: entry.element,
+            selector: entry.selector,
+            text: entry.text,
+            key: entry.key,
+            ms: entry.ms,
+        });
+    }
+
+    // Process top-level fields
     let url = args.url;
-
-    // Handle raw-string fallback from malformed JSON
     if (!url && args._raw) {
         const raw = args._raw.trim();
         if (raw.startsWith('http')) url = raw;
     }
-
-    const resolved = type || (url ? 'navigate' : undefined);
+    const resolved = args.type || args.action || (url ? 'navigate' : undefined);
     if (resolved) {
         list.push({
             type: resolved,

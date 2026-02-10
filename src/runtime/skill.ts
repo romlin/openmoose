@@ -148,7 +148,7 @@ function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
         res = { type: 'boolean' };
     }
     else if (typeName.includes('Array')) {
-        const itemType = f._def?.type || f._zod?.def?.element;
+        const itemType = f._def?.element || f._zod?.def?.element;
         res = {
             type: 'array',
             items: itemType ? zodFieldToJsonSchema(itemType) : { type: 'string' },

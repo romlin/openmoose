@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { config } from '../config/index.js';
 import { MistralProvider, LlamaProvider } from './providers.js';
 import type { OpenAIMessage } from './types.js';
 
@@ -8,6 +9,8 @@ global.fetch = vi.fn();
 describe('MistralProvider', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Ensure the provider resolves to the cloud endpoint
+        config.brain.mistral.apiKey = 'test-key';
     });
 
     it('should send correct request to Mistral API', async () => {
