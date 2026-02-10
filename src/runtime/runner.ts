@@ -85,9 +85,9 @@ export class AgentRunner {
         let cumulativeContext = '';
 
         // If deconstruction didn't actually split it, and we already tried direct route, 
-        // we skip the loop if the router already failed for this specific string.
-        if (actions.length === 1 && actions[0] === message && directRouteResult.handled === false) {
-            logger.debug('Skipping redundant router check after failed direct attempt', 'Runner');
+        // we skip the loop if the router already tried this specific string.
+        if (actions.length === 1 && actions[0] === message && directRouteResult.handled === true) {
+            logger.debug('Skipping redundant router check after direct attempt', 'Runner');
         } else {
             for (const action of actions) {
                 logger.debug(`Executing step: "${action}"`, 'Runner');
@@ -323,7 +323,7 @@ ${combinedResults}
 
 ${results.length < actions.length
                 ? 'Some steps could not be handled automatically. Please address the remaining parts of the user request based on these results.'
-                : 'Please provide a natural, friendly summary of these results to the user. Only include information present in the results above -- do not add details from your own knowledge.'}`;
+                : 'Please respond directly to the user in a natural, friendly way based on these results. Skip any introductory filler like "Here is a summary" or "Got it". Just answer the user.'}`;
 
         const { fullResponse } = await this.streamAndCollect(
             enhancedMessage, history, [], formatter, onDelta

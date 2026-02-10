@@ -4,14 +4,18 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
 
 ## Quick Start
 
-1. Create a file named `skills/hn.yaml`:
+1. Create a file named `skills/youtube.yaml`:
    ```yaml
-   name: hacker_news
-   description: Get top stories from Hacker News
+   name: youtube
+   description: Play a video or search for a creator
    examples:
-     - "what is on hacker news?"
-     - "hn top stories"
-   command: "curl -s https://hacker-news.firebaseio.com/v0/topstories.json | python3 -c \"import sys, json, urllib.request; ids=json.load(sys.stdin)[:5]; print('\\n'.join([json.loads(urllib.request.urlopen(f'https://hacker-news.firebaseio.com/v0/item/{id}.json').read())['title'] for id in ids]))\""
+     - "play latest video by pewdiepie"
+   args:
+     query:
+       patterns:
+         - "play latest video by ([a-zA-Z0-9\\s]+)"
+   host: true
+   command: "ID=$(yt-dlp --get-id \"ytsearch1:{{query}} latest\"); xdg-open \"https://www.youtube.com/watch?v=$ID\" &"
    ```
 2. Restart the gateway (`pnpm gateway`).
 3. Ask: "What's on hacker news?".
@@ -55,12 +59,11 @@ In your `command`, you can use these arguments:
 
 ## Security & Sandbox
 
-> [!IMPORTANT]
-> All portable skills run inside a **hardened Docker sandbox**. They have a read-only view of your project and cannot modify your host system.
+> [!CAUTION]
+> By default, portable skills run inside a **hardened Docker sandbox**. However, if you set `host: true`, the command will run directly on your host machine. **Use this only for trusted skills** (e.g., controlling a local player or opening a browser).
 
-- **Timeout**: Skills are killed after 15 seconds by default.
-- **Resource Limits**: 512MB RAM and 1 CPU.
-- **Isolation**: No privileged capabilities are granted to the container.
+- **Sandboxed (Default)**: Read-only view of your project, no host access, 15s timeout.
+- **Host Mode (`host: true`)**: Full access to your environment. Required for opening local windows or hardware control.
 
 ## Testing Your Skill
 

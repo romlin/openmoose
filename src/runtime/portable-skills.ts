@@ -100,14 +100,18 @@ export class PortableSkillLoader {
                     const finalCommand = PortableSkillLoader.interpolateCommand(def.command, args, context);
 
                     try {
-                        // Always use sandbox -- host execution is disabled for security
+                        if (def.host) {
+                            const { exec } = await import('node:child_process');
+                            const { promisify } = await import('node:util');
+                            const execAsync = promisify(exec);
+
+                            const { stdout, stderr } = await execAsync(finalCommand);
+                            return { success: true, result: stdout.trim() || stderr.trim() || 'Success' };
+                        }
+
                         const sandboxToUse = skillContext?.sandbox;
                         if (!sandboxToUse) {
                             return { success: false, error: 'Sandbox not available in context' };
-                        }
-
-                        if (def.host) {
-                            logger.warn(`Skill "${def.name}" requested host execution -- running in sandbox instead for security.`, 'Skills');
                         }
 
                         const result = await sandboxToUse.run(finalCommand, {

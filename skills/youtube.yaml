@@ -1,0 +1,19 @@
+name: youtube
+description: Play a specific YouTube video or search for the latest video by a creator
+examples:
+  - "play youtube video https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  - "play the latest video by pewdiepie"
+  - "watch the latest youtube video from mrbeast"
+  - "play pewdiepie latest"
+  - "open youtube https://youtu.be/dQw4w9WgXcQ"
+args:
+  url:
+    patterns:
+      - 'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)'
+  query:
+    patterns:
+      - "(?:play|watch|open) (?:the )?latest (?:youtube )?video (?:by|from) ([a-zA-Z0-9\\s]+)"
+      - "(?:play|watch|open) ([a-zA-Z0-9\\s]+) last video"
+      - "(?:play|watch|open) ([a-zA-Z0-9\\s]+) latest"
+host: true
+command: "URL='{{url}}'; QUERY='{{query}}'; if [ -n \"$URL\" ]; then xdg-open \"https://www.youtube.com/watch?v=$URL\" > /dev/null 2>&1 & echo \"Opened YouTube video $URL on host screen.\"; elif [ -n \"$QUERY\" ]; then ID=$(yt-dlp --get-id \"ytsearch1:$QUERY\" 2>/dev/null); if [ -n \"$ID\" ]; then xdg-open \"https://www.youtube.com/watch?v=$ID\" > /dev/null 2>&1 & echo \"Found and playing latest video by $QUERY on host screen.\"; else echo \"Could not find a video for creator: $QUERY\"; exit 1; fi; else echo \"No video link or creator name found in the request.\"; exit 1; fi"
