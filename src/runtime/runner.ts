@@ -133,7 +133,7 @@ export class AgentRunner {
 
             if (toolCalls && toolCalls.length > 0) {
                 const results = await this.executeToolCalls(toolCalls, options.onToolCall, options.onToolResult);
-                currentMessage = `Tool results: ${JSON.stringify(results)}. Please continue if the task is not complete, or provide a final answer.`;
+                currentMessage = `Tool results: ${JSON.stringify(results)}. Base your answer strictly on these results. If the results lack detail for part of the question, say what you know and offer to look deeper. Do not invent information.`;
                 iterations++;
             } else {
                 break;
@@ -323,7 +323,7 @@ ${combinedResults}
 
 ${results.length < actions.length
                 ? 'Some steps could not be handled automatically. Please address the remaining parts of the user request based on these results.'
-                : 'Please provide a natural, friendly summary of these results to the user.'}`;
+                : 'Please provide a natural, friendly summary of these results to the user. Only include information present in the results above -- do not add details from your own knowledge.'}`;
 
         const { fullResponse } = await this.streamAndCollect(
             enhancedMessage, history, [], formatter, onDelta
