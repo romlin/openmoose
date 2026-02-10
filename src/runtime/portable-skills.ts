@@ -107,7 +107,8 @@ export class PortableSkillLoader {
 
                             try {
                                 const { stdout, stderr } = await execAsync(finalCommand, { timeout: config.skills.timeoutMs });
-                                return { success: true, result: stdout.trim() || stderr.trim() || 'Success' };
+                                if (stderr) logger.debug(`Host command stderr: ${stderr.trim()}`, 'Security');
+                                return { success: true, result: stdout.trim() || 'Success' };
                             } catch (err) {
                                 return { success: false, error: `Host execution failed or timed out: ${getErrorMessage(err)}` };
                             }

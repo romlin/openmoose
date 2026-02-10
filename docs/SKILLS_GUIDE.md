@@ -10,12 +10,16 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
    description: Play a video or search for a creator
    examples:
      - "play latest video by pewdiepie"
+     - "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ"
    args:
+     id:
+       patterns:
+         - 'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)'
      query:
        patterns:
          - "play latest video by ([a-zA-Z0-9\\s]+)"
    host: true
-   command: "ID=$(yt-dlp --get-id \"ytsearch1:{{query}} latest\"); xdg-open \"https://www.youtube.com/watch?v=$ID\" &"
+   command: "if [ -n \"{{id}}\" ]; then xdg-open \"https://www.youtube.com/watch?v={{id}}\" & else ID=$(yt-dlp --get-id \"ytsearch1:{{query}} latest\"); xdg-open \"https://www.youtube.com/watch?v=$ID\" & fi"
    ```
 2. Restart the gateway (`pnpm gateway`).
 3. Ask: "play latest video by pewdiepie".

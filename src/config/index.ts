@@ -66,7 +66,7 @@ export const config = {
 
     skills: {
         /** Execution timeout for portable YAML skills (ms). */
-        timeoutMs: 15_000,
+        timeoutMs: 30_000,
         customDir: path.join(process.cwd(), 'src/tools/custom'),
     },
 
