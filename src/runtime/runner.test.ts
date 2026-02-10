@@ -19,21 +19,21 @@ vi.mock('./semantic-router.js');
 vi.mock('../infra/logger.js');
 
 describe('AgentRunner', () => {
-    let brain: any;
-    let memory: any;
-    let sandbox: any;
-    let registry: any;
-    let scheduler: any;
-    let whatsapp: any;
+    let brain: InstanceType<typeof LocalBrain>;
+    let memory: InstanceType<typeof LocalMemory>;
+    let sandbox: InstanceType<typeof LocalSandbox>;
+    let registry: InstanceType<typeof SkillRegistry>;
+    let scheduler: InstanceType<typeof TaskScheduler>;
+    let whatsapp: InstanceType<typeof WhatsAppManager>;
     let runner: AgentRunner;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        brain = new LocalBrain({} as any);
+        brain = new LocalBrain({} as ConstructorParameters<typeof LocalBrain>[0]);
         memory = new LocalMemory();
         sandbox = new LocalSandbox();
         registry = new SkillRegistry();
-        scheduler = new TaskScheduler('', {} as any);
+        scheduler = new TaskScheduler('', {} as ConstructorParameters<typeof TaskScheduler>[1]);
         whatsapp = new WhatsAppManager();
 
         registry.getOpenAITools = vi.fn().mockReturnValue([]);

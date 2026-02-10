@@ -75,7 +75,6 @@
   },
   "pnpm": {
     "overrides": {
-      "onnxruntime-node": "1.24.1",
       "tar": ">=7.5.7"
     }
   }

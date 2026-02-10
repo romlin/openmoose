@@ -224,7 +224,8 @@ export class AgentRunner {
                 result = await this.registry.execute(name, args, context);
             } catch (err) {
                 const errorMessage = getErrorMessage(err);
-                logger.error(`Critical tool failure in ${name}: ${errorMessage}`, 'Runner');
+                const safeError = typeof errorMessage === 'string' ? errorMessage.slice(0, 120) : 'unknown error';
+                logger.error(`Critical tool failure in ${name}: ${safeError}`, 'Runner');
                 result = { success: false, error: `Execution error: ${errorMessage}` };
             }
 
@@ -232,7 +233,7 @@ export class AgentRunner {
                 logger.success(`Tool ${name} succeeded.`, 'Runner');
             } else {
                 const safeError = typeof result.error === 'string'
-                    ? result.error.slice(0, 200)
+                    ? result.error.slice(0, 120)
                     : 'unknown error';
                 logger.warn(`Tool ${name} failed: ${safeError}`, 'Runner');
             }

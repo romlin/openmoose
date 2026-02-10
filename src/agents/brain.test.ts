@@ -28,8 +28,8 @@ vi.mock('./providers.js', () => {
 });
 
 describe('LocalBrain', () => {
-    let memory: any;
-    let registry: any;
+    let memory: InstanceType<typeof LocalMemory>;
+    let registry: InstanceType<typeof SkillRegistry>;
 
     beforeEach(() => {
         vi.clearAllMocks();

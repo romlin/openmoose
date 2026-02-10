@@ -7,7 +7,7 @@ import { WebSocket, RawData } from 'ws';
 import chalk from 'chalk';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { createInterface, Interface } from 'node:readline';
 import { config } from '../config/index.js';
@@ -94,7 +94,7 @@ export class MooseClient {
     async startInteractive(voice = false) {
         const model = config.brain.provider === 'mistral'
             ? config.brain.mistral.model
-            : join('models/llama-cpp', config.brain.llamaCpp.modelPath).split('/').pop();
+            : basename(config.brain.llamaCpp.modelPath);
 
         printBanner('Talk Mode');
         printStatus('Brain', `${config.brain.provider} · ${model}`);

@@ -9,23 +9,27 @@ import { logger } from './logger.js';
 export type FeatureExtractionPipeline = (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
 
 export class EmbeddingProvider {
-    private static instance: EmbeddingProvider;
+    private static instances: Map<string, EmbeddingProvider> = new Map();
+    private static readonly DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2';
     private extractor: FeatureExtractionPipeline | null = null;
-    private modelName: string;
+    readonly modelName: string;
 
-    constructor(modelName: string = 'Xenova/all-MiniLM-L6-v2') {
+    constructor(modelName: string = EmbeddingProvider.DEFAULT_MODEL) {
         this.modelName = modelName;
     }
 
     /**
-     * Singleton-ish accessor to avoid reloading models unnecessarily 
-     * if multiple services use the same model.
+     * Returns an EmbeddingProvider for the given model, creating one if it
+     * doesn't exist yet. Keyed by model name so different models coexist.
      */
     static getInstance(modelName?: string): EmbeddingProvider {
-        if (!EmbeddingProvider.instance) {
-            EmbeddingProvider.instance = new EmbeddingProvider(modelName);
+        const key = modelName || EmbeddingProvider.DEFAULT_MODEL;
+        let instance = EmbeddingProvider.instances.get(key);
+        if (!instance) {
+            instance = new EmbeddingProvider(key);
+            EmbeddingProvider.instances.set(key, instance);
         }
-        return EmbeddingProvider.instance;
+        return instance;
     }
 
     async getEmbedding(text: string): Promise<number[]> {
@@ -39,9 +43,7 @@ export class EmbeddingProvider {
 
         try {
             const { pipeline } = await import('@huggingface/transformers');
-            // We cast to any first because the @huggingface/transformers types can be tricky 
-            // with dynamic imports, but we use our internal type for the member.
-            this.extractor = (await pipeline('feature-extraction', this.modelName)) as any;
+            this.extractor = (await pipeline('feature-extraction', this.modelName)) as unknown as FeatureExtractionPipeline;
             logger.info(`Embedding engine initialized: ${this.modelName}`, 'Embeddings');
         } catch (err) {
             logger.error('Failed to initialize embedding engine', 'Embeddings', err);

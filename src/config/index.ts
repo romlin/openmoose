@@ -7,6 +7,28 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 
 dotenv.config();
+
+const VALID_PROVIDERS = ['mistral', 'node-llama-cpp'] as const;
+const VALID_GPU_VALUES = ['auto', 'metal', 'cuda', 'vulkan', 'false'] as const;
+
+function validateProvider(raw: string | undefined): 'mistral' | 'node-llama-cpp' {
+    const value = raw || 'node-llama-cpp';
+    if (VALID_PROVIDERS.includes(value as typeof VALID_PROVIDERS[number])) {
+        return value as 'mistral' | 'node-llama-cpp';
+    }
+    console.warn(`[Config] Invalid LLM_PROVIDER "${value}", falling back to "node-llama-cpp". Valid: ${VALID_PROVIDERS.join(', ')}`);
+    return 'node-llama-cpp';
+}
+
+function validateGpu(raw: string | undefined): 'auto' | 'metal' | 'cuda' | 'vulkan' | false {
+    const value = raw || 'auto';
+    if (!VALID_GPU_VALUES.includes(value as typeof VALID_GPU_VALUES[number])) {
+        console.warn(`[Config] Invalid LLAMA_CPP_GPU "${value}", falling back to "auto". Valid: ${VALID_GPU_VALUES.join(', ')}`);
+        return 'auto';
+    }
+    return value === 'false' ? false : (value as 'auto' | 'metal' | 'cuda' | 'vulkan');
+}
+
 export const config = {
     gateway: {
         port: parseInt(process.env.GATEWAY_PORT || '18789', 10),
@@ -15,14 +37,14 @@ export const config = {
     },
 
     brain: {
-        provider: (process.env.LLM_PROVIDER || 'node-llama-cpp') as 'mistral' | 'node-llama-cpp',
+        provider: validateProvider(process.env.LLM_PROVIDER),
         mistral: {
             model: process.env.MISTRAL_MODEL || 'mistral-large-latest',
             apiKey: process.env.MISTRAL_API_KEY,
         },
         llamaCpp: {
             modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(process.cwd(), 'models/llama-cpp/ministral-8b-reasoning-q4km.gguf'),
-            gpu: (process.env.LLAMA_CPP_GPU === 'false' ? false : (process.env.LLAMA_CPP_GPU || 'auto')) as 'auto' | 'metal' | 'cuda' | 'vulkan' | false,
+            gpu: validateGpu(process.env.LLAMA_CPP_GPU),
         }
     },
 

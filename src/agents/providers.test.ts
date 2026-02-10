@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MistralProvider, LlamaProvider } from './providers.js';
-
+import type { OpenAIMessage } from './types.js';
 
 // Mock global fetch for Mistral tests
 global.fetch = vi.fn();
@@ -20,7 +20,7 @@ describe('MistralProvider', () => {
                 }]
             })
         };
-        (global.fetch as any).mockResolvedValue(mockResponse);
+        vi.mocked(global.fetch).mockResolvedValue(mockResponse as Response);
 
         const provider = new MistralProvider();
         const result = await provider.chat([{ role: 'user', content: 'hi' }]);
@@ -36,11 +36,11 @@ describe('MistralProvider', () => {
     });
 
     it('should handle API errors', async () => {
-        (global.fetch as any).mockResolvedValue({
+        vi.mocked(global.fetch).mockResolvedValue({
             ok: false,
             status: 500,
             text: () => Promise.resolve('Internal Error')
-        });
+        } as unknown as Response);
 
         const provider = new MistralProvider();
         await expect(provider.chat([])).rejects.toThrow('Mistral API error: 500');
@@ -49,8 +49,9 @@ describe('MistralProvider', () => {
 
 describe('LlamaProvider', () => {
     it('should parse messages into system, history, and user message', () => {
-        const provider = new LlamaProvider() as any;
-        const messages: any[] = [
+        // Access private methods for unit testing
+        const provider = new LlamaProvider() as unknown as { parseMessages: (m: OpenAIMessage[]) => { systemPrompt?: string; userMessage: string; history: OpenAIMessage[] } };
+        const messages: OpenAIMessage[] = [
             { role: 'system', content: 'sys' },
             { role: 'user', content: 'u1' },
             { role: 'assistant', content: 'a1' },
@@ -65,8 +66,8 @@ describe('LlamaProvider', () => {
     });
 
     it('should map history correctly for node-llama-cpp', () => {
-        const provider = new LlamaProvider() as any;
-        const history: any[] = [
+        const provider = new LlamaProvider() as unknown as { mapHistory: (h: OpenAIMessage[], sys?: string) => Array<{ type: string; text?: string; response?: string[] }> };
+        const history: OpenAIMessage[] = [
             { role: 'user', content: 'hi' },
             { role: 'assistant', content: 'hello' }
         ];

@@ -40,8 +40,20 @@ function dockerRun(args: string[], logTag?: string): Promise<number> {
 }
 
 export class BrowserManager {
+    /** In-flight promise to serialize concurrent ensureRunning() calls. */
+    private static _ensureRunningPromise: Promise<void> | null = null;
+
     /** Ensure the browser daemon container is running and healthy. */
-    static async ensureRunning(): Promise<void> {
+    static ensureRunning(): Promise<void> {
+        if (this._ensureRunningPromise) return this._ensureRunningPromise;
+        this._ensureRunningPromise = this._doEnsureRunning().finally(() => {
+            this._ensureRunningPromise = null;
+        });
+        return this._ensureRunningPromise;
+    }
+
+    /** Actual start sequence -- only one runs at a time. */
+    private static async _doEnsureRunning(): Promise<void> {
         if (await this.isHealthy()) return;
 
         // Remove any stale container before starting fresh
@@ -89,7 +101,7 @@ export class BrowserManager {
         await this.waitForHealthy();
     }
 
-    /** Stop and remove the daemon container. */
+    /** Stop and remove the daemon container. Clears the in-flight lock if active. */
     static async stop(): Promise<void> {
         await dockerRun(['rm', '-f', BROWSER_DAEMON_CONTAINER_NAME]);
     }

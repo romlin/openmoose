@@ -54,8 +54,10 @@ download_with_progress() {
 
   mkdir -p "$dir"
 
-  # Get total size (following redirects)
+  # Get total size (following redirects); default to 0 if empty/non-numeric
   local total_bytes=$(curl -sLI "$url" | grep -i Content-Length | tail -n1 | awk '{print $2}' | tr -d '\r')
+  total_bytes="${total_bytes:-0}"
+  if ! [[ $total_bytes =~ ^[0-9]+$ ]]; then total_bytes=0; fi
   local total_gb=$(echo "scale=2; $total_bytes / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "??")
 
   log_header "Downloading $label..."
@@ -158,7 +160,7 @@ log_header "Downloading LLM Model..."
 LLM_FILE="models/llama-cpp/ministral-8b-reasoning-q4km.gguf"
 LLM_URL="https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF/resolve/main/Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf"
 
-if [ -f "$LLM_FILE" ] && [ $(stat -c%s "$LLM_FILE") -gt 1000000000 ]; then
+if [ -f "$LLM_FILE" ] && [ "$(stat -c%s "$LLM_FILE")" -gt 1000000000 ]; then
   log_ok "Local LLM model already present"
 else
   download_with_progress "$LLM_URL" "$LLM_FILE" "Ministral-8B Reasoning (integrated)"

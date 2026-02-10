@@ -161,7 +161,7 @@ async function getPageContent(p) {
 function resolveTarget(raw) {
     if (raw.element != null) return `[${ELEMENT_ATTR}="${raw.element}"]`;
     if (raw.selector) return raw.selector;
-    if (raw.text) return `text="${raw.text}"`;
+    if (raw.text) return `text=${JSON.stringify(raw.text)}`;
     return null;
 }
 

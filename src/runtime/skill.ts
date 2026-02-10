@@ -127,7 +127,7 @@ function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
         if (options.length > 0) {
             // Simplify: pick the first option's type, or any non-string type if multiple exist
             const schemas = options.map((opt: unknown) => zodFieldToJsonSchema(opt));
-            const distinctTypes = [...new Set(schemas.map((s: any) => s.type))];
+            const distinctTypes = [...new Set(schemas.map((s: Record<string, unknown>) => s.type as string))];
 
             if (distinctTypes.length === 1) {
                 res = { type: distinctTypes[0] };
