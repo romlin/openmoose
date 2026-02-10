@@ -17,7 +17,7 @@ async function authenticate() {
     await manager.clearAuth();
 
     manager.on('qr', (qr) => {
-        console.log(chalk.bold('  Scan this QR code with WhatsApp:\n'));
+        console.log(`  ${chalk.bold('Scan this QR code with WhatsApp:')}\n`);
         printHint('1. Open WhatsApp → Settings → Linked Devices');
         printHint('2. Tap "Link a Device"');
         console.log('');
@@ -52,6 +52,6 @@ async function authenticate() {
 }
 
 authenticate().catch((err) => {
-    console.error(chalk.red('Authentication failed:'), err);
+    console.error(`  ${chalk.red('Authentication failed:')}`, err);
     process.exit(1);
 });

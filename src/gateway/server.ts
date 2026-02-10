@@ -24,15 +24,7 @@ import { printBanner, printStatus, printPending, printReady } from '../infra/ban
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { config } from '../config/index.js';
-
-/** Maximum number of history messages kept per session. */
-const MAX_HISTORY_LENGTH = 20;
-
-/** Delay after killing a conflicting process before rebinding the port. */
-const PORT_KILL_DELAY_MS = 500;
-
-/** Polling interval for the task scheduler (ms). */
-const SCHEDULER_POLL_MS = 60_000;
+import { BrowserManager } from '../runtime/browser/manager.js';
 
 /** Zod schema for validating incoming WebSocket payloads. */
 const WsPayloadSchema = z.discriminatedUnion('type', [
@@ -114,7 +106,8 @@ export class LocalGateway {
                 (history) => this.sessions.set(ws, history),
                 {
                     onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
-                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool }))
+                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
+                    onToolResult: (payload) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...payload }))
                 }
             );
 
@@ -144,18 +137,20 @@ export class LocalGateway {
         saveHistory: (history: { role: 'user' | 'assistant', content: string }[]) => void,
         callbacks: {
             onDelta?: (text: string) => void,
-            onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void
+            onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void,
+            onToolResult?: (payload: { name: string; success: boolean; error?: string }) => void
         } = {}
     ): Promise<string> {
         const fullResponse = await this.runner.run(message, {
             onDelta: callbacks.onDelta || (() => { }),
-            onToolCall: callbacks.onToolCall
+            onToolCall: callbacks.onToolCall,
+            onToolResult: callbacks.onToolResult
         }, history);
 
         const updatedHistory = [...history,
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: fullResponse }
-        ].slice(-MAX_HISTORY_LENGTH);
+        { role: 'user' as const, content: message },
+        { role: 'assistant' as const, content: fullResponse }
+        ].slice(-config.gateway.maxHistoryLength);
 
         saveHistory(updatedHistory);
         return fullResponse;
@@ -197,7 +192,7 @@ export class LocalGateway {
             if (shouldKill) {
                 if (killProcess(pid)) {
                     logger.success(`Killed process ${pid}`, 'Gateway');
-                    await new Promise(r => setTimeout(r, PORT_KILL_DELAY_MS));
+                    await new Promise(r => setTimeout(r, config.gateway.portKillDelayMs));
                 } else {
                     logger.error(`Failed to kill process ${pid}. Try manually: kill -9 ${pid}`, 'Gateway');
                     process.exit(1);
@@ -213,14 +208,25 @@ export class LocalGateway {
     }
 
     private async initServices() {
-        // Memory
+        await this.initMemory();
+        await this.initSkills();
+        this.initWhatsApp();
+        this.createScheduler();
+        await this.initBrainAndRunner();
+        await this.startScheduler();
+        await this.initBrowser();
+        this.registerShutdownHooks();
+    }
+
+    private async initMemory() {
         const docsDir = path.join(process.cwd(), 'docs');
         try { await this.memory.syncDocs(docsDir); } catch (err) {
             logger.error('Document sync failed', 'Gateway', err);
         }
         printStatus('Memory', config.memory.dbPath);
+    }
 
-        // Skills
+    private async initSkills() {
         this.skillRegistry.loadDefaults();
         const customSkillsDir = new URL('../skills/custom', import.meta.url).pathname;
         await this.skillRegistry.loadExtensions(customSkillsDir);
@@ -229,40 +235,66 @@ export class LocalGateway {
         const skillEntries = await loadSkillEntries(skillsDir);
         this.skillsPrompt = buildSkillsPrompt(skillEntries);
 
-        // Count portable YAML skills
         let yamlCount = 0;
         try {
             const files = await readdir(skillsDir);
             yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
         } catch { /* skills dir may not exist */ }
 
-        const builtInCount = this.skillRegistry.getAll().length;
-        printStatus('Skills', `${builtInCount} built-in · ${yamlCount} portable`);
+        printStatus('Skills', `${this.skillRegistry.getAll().length} built-in · ${yamlCount} portable`);
+    }
 
-        // WhatsApp (created here, connected later in connectWhatsApp)
-        const dataDir = path.join(process.cwd(), '.moose/data');
+    private initWhatsApp() {
         this.whatsapp = new WhatsAppManager();
+    }
 
-        // Scheduler
+    private createScheduler() {
+        const dataDir = path.join(process.cwd(), '.moose/data');
         this.scheduler = new TaskScheduler(dataDir, {
-            pollInterval: SCHEDULER_POLL_MS,
+            pollInterval: config.scheduler.pollIntervalMs,
             onTaskRun: async (task) => {
                 logger.info(`Running task: ${task.name}`, 'Scheduler');
                 return await this.runner.run(task.prompt, { onDelta: () => { }, onToolCall: () => { } });
             }
         });
+    }
 
-        // Brain + Runner
-        const model = config.brain.provider === 'mistral' ? config.brain.mistral.model : config.brain.ollama.model;
+    private async initBrainAndRunner() {
+        const modelName = config.brain.provider === 'mistral'
+            ? config.brain.mistral.model
+            : path.basename(config.brain.llamaCpp.modelPath);
+
         this.brain = new LocalBrain({ memory: this.memory, registry: this.skillRegistry, skillsPrompt: this.skillsPrompt });
         this.runner = new AgentRunner(this.brain, this.memory, this.sandbox, this.skillRegistry, this.scheduler, this.whatsapp);
         await this.runner.init();
-        printStatus('Brain', `${config.brain.provider} · ${model}`);
+        printStatus('Brain', `${config.brain.provider} · ${modelName}`);
+    }
 
-        // Scheduler start
+    private async startScheduler() {
         await this.scheduler.init();
         this.scheduler.start();
-        printStatus('Scheduler', `active · ${SCHEDULER_POLL_MS / 1000}s poll`);
+        printStatus('Scheduler', `active · ${config.scheduler.pollIntervalMs / 1000}s poll`);
+    }
+
+    private async initBrowser() {
+        try {
+            await BrowserManager.ensureRunning();
+            printStatus('Browser', 'daemon active');
+        } catch (e) {
+            logger.error('Failed to start Browser Daemon', 'Gateway', e);
+        }
+    }
+
+    private registerShutdownHooks() {
+        const shutdown = async () => {
+            logger.info('Shutting down Gateway...', 'Gateway');
+            await BrowserManager.stop().catch(err => {
+                logger.warn(`Error stopping browser: ${err.message}`, 'Gateway');
+            });
+            process.exit(0);
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
     }
 
     /** Connect WhatsApp and set up the message bridge. */

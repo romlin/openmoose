@@ -11,16 +11,13 @@ describe('config', () => {
         expect(config.gateway.port).toBeGreaterThan(0);
     });
 
-    it('has brain provider set to ollama or mistral', () => {
-        expect(['ollama', 'mistral']).toContain(config.brain.provider);
+    it('has brain provider set to node-llama-cpp or mistral', () => {
+        expect(['node-llama-cpp', 'mistral']).toContain(config.brain.provider);
     });
 
-    it('has ollama host URL', () => {
-        expect(config.brain.ollama.host).toMatch(/^https?:\/\//);
-    });
-
-    it('has ollama model name', () => {
-        expect(config.brain.ollama.model).toBeTruthy();
+    it('has llama-cpp model path', () => {
+        expect(config.brain.llamaCpp.modelPath).toBeTruthy();
+        expect(config.brain.llamaCpp.modelPath).toContain('ministral-8b');
     });
 
     it('has mistral model name', () => {

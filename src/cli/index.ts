@@ -4,213 +4,13 @@
  */
 
 import { Command } from 'commander';
-import { WebSocket, RawData } from 'ws';
 import chalk from 'chalk';
-import { spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { writeFileSync, unlinkSync } from 'node:fs';
-import { createInterface, Interface } from 'node:readline';
 import { config } from '../config/index.js';
-import { printBanner, printStatus, printHint } from '../infra/banner.js';
+import { getErrorMessage } from '../infra/errors.js';
+import { MooseClient } from './client.js';
 
 const program = new Command();
 
-interface GatewayMessage {
-    type: 'agent.run' | 'agent.delta' | 'agent.audio' | 'agent.tool_call' | 'agent.final' | 'error';
-    text?: string;
-    message?: string;
-    audio?: string;
-    name?: string;
-    args?: Record<string, unknown>;
-}
-
-/**
- * MooseClient - Handles connection and communication with the OpenMoose Gateway
- */
-class MooseClient {
-    private ws: WebSocket;
-    private responseStarted = false;
-    private currentAudioProcess: import('node:child_process').ChildProcess | null = null;
-    private rl: Interface | null = null;
-
-    /** Max length for the tool argument summary line. */
-    private static readonly ARG_SUMMARY_MAX = 60;
-
-    /** Prompt string shown before user input. */
-    private static readonly PROMPT = chalk.bold.green('you') + chalk.dim(' › ');
-
-    /** Prefix shown before assistant responses. */
-    private static readonly RESPONSE_PREFIX = '\n' + chalk.bold.cyan('moose') + chalk.dim(' › ');
-
-    constructor(port: string) {
-        this.ws = new WebSocket(`ws://localhost:${port}`);
-    }
-
-    async connect(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.ws.on('open', () => resolve());
-            this.ws.on('error', (err) => reject(err));
-            this.ws.on('message', (data) => this.handleMessage(data));
-        });
-    }
-
-    async run(message: string, voice = false) {
-        this.ws.send(JSON.stringify({ type: 'agent.run', message, audio: voice }));
-
-        this.ws.on('message', (data) => {
-            try {
-                const payload = JSON.parse(data.toString()) as GatewayMessage;
-                if (payload.type === 'agent.final') {
-                    setTimeout(() => {
-                        this.close();
-                        process.exit(0);
-                    }, 1000);
-                }
-            } catch {
-                // Ignore non-JSON messages
-            }
-        });
-    }
-
-    async startInteractive(voice = false) {
-        const model = config.brain.provider === 'ollama' ? config.brain.ollama.model : config.brain.mistral.model;
-
-        printBanner('Talk Mode');
-        printStatus('Brain', `${config.brain.provider} · ${model}`);
-        printStatus('Voice', voice ? 'on' : 'off');
-        console.log('');
-        printHint('Type a message to start. Ctrl+C to exit.');
-        console.log('');
-
-        this.rl = createInterface({
-            input: process.stdin,
-            output: process.stdout,
-            prompt: MooseClient.PROMPT,
-        });
-
-        this.rl.prompt();
-
-        this.rl.on('line', (line) => {
-            this.stopAudio();
-
-            if (!line.trim()) {
-                this.rl?.prompt();
-                return;
-            }
-            this.ws.send(JSON.stringify({ type: 'agent.run', message: line, audio: voice }));
-        });
-    }
-
-    /** Extract a short human-readable summary from tool args. */
-    private static summarizeArgs(_tool: string, args?: Record<string, unknown>): string {
-        if (!args) return '';
-        // Pick the most useful field per tool type
-        const raw =
-            (args.command as string) ||
-            (args.code as string) ||
-            (args.query as string) ||
-            (args.url as string) ||
-            (args.path as string) ||
-            (args.text as string) ||
-            '';
-        if (!raw) return '';
-        const oneLine = raw.replace(/\n/g, ' ').trim();
-        if (oneLine.length <= MooseClient.ARG_SUMMARY_MAX) return oneLine;
-        return oneLine.slice(0, MooseClient.ARG_SUMMARY_MAX - 1) + '\u2026';
-    }
-
-    private stopAudio() {
-        if (this.currentAudioProcess) {
-            try {
-                this.currentAudioProcess.kill('SIGKILL');
-            } catch (err) {
-                // Process may have already exited
-                void err;
-            }
-            this.currentAudioProcess = null;
-        }
-    }
-
-    private handleMessage(data: RawData) {
-        let payload: GatewayMessage;
-        try {
-            payload = JSON.parse(data.toString());
-        } catch {
-            return; // Ignore non-JSON messages
-        }
-
-        switch (payload.type) {
-            case 'agent.delta':
-                if (!this.responseStarted) {
-                    process.stdout.write(MooseClient.RESPONSE_PREFIX);
-                    this.responseStarted = true;
-                }
-                process.stdout.write(payload.text || '');
-                break;
-
-            case 'agent.audio':
-                if (payload.audio) {
-                    this.responseStarted = true;
-                    this.playAudio(payload.audio);
-                }
-                break;
-
-            case 'agent.tool_call': {
-                const toolName = payload.name || 'unknown';
-                const summary = MooseClient.summarizeArgs(toolName, payload.args);
-                // Reset response prefix so the next delta re-prints "moose ›"
-                this.responseStarted = false;
-                process.stdout.write('\n');
-                process.stdout.write(
-                    chalk.bgYellow.black.bold(` ${toolName} `) +
-                    (summary ? ' ' + chalk.dim(summary) : '') +
-                    '\n'
-                );
-                break;
-            }
-
-            case 'agent.final':
-                process.stdout.write('\n\n');
-                this.responseStarted = false;
-                this.rl?.prompt();
-                break;
-
-            case 'error':
-                console.error(chalk.red('\n  Error:'), payload.message);
-                this.responseStarted = false;
-                break;
-        }
-    }
-
-    private playAudio(base64Audio: string) {
-        this.stopAudio();
-
-        const buffer = Buffer.from(base64Audio, 'base64');
-        const tempFile = join(tmpdir(), `moose_voice_${Date.now()}.wav`);
-        writeFileSync(tempFile, buffer);
-
-        const player = process.platform === 'darwin' ? 'afplay' : 'aplay';
-        this.currentAudioProcess = spawn(player, [tempFile]);
-
-        this.currentAudioProcess.on('close', () => {
-            this.currentAudioProcess = null;
-            try {
-                unlinkSync(tempFile);
-            } catch (err) {
-                // File may have already been cleaned up
-                void err;
-            }
-        });
-    }
-
-    close() {
-        this.ws.close();
-        this.rl?.close();
-    }
-}
-
-// CLI Definition
 program
     .name('openmoose')
     .description('OpenMoose: The local-first AI assistant.')
@@ -228,8 +28,7 @@ program
             await client.connect();
             await client.run(message, options.voice);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(chalk.red('Failed to connect to Gateway:'), msg);
+            console.error(`  ${chalk.red('Failed to connect to Gateway:')}`, getErrorMessage(err));
             process.exit(1);
         }
     });
@@ -250,8 +49,7 @@ program
                 process.exit();
             });
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(chalk.red('Gateway Connection Error:'), msg);
+            console.error(`  ${chalk.red('Gateway Connection Error:')}`, getErrorMessage(err));
             process.exit(1);
         }
     });

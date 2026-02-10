@@ -84,14 +84,51 @@ describe('zodToJsonSchema', () => {
         });
     });
 
-    it('handles describe() annotations without breaking', () => {
+    it('preserves description() annotations', () => {
         const schema = z.object({
             code: z.string().describe('Python code to execute'),
         });
         const result = zodToJsonSchema(schema);
 
-        expect(result.properties).toHaveProperty('code');
-        expect((result.properties as Record<string, { type: string }>).code.type).toBe('string');
+        expect(result.properties).toEqual({
+            code: { type: 'string', description: 'Python code to execute' },
+        });
+    });
+
+    it('handles laxNumber (union of number and string-to-number transform)', () => {
+        const laxNumber = z.union([
+            z.number(),
+            z.string().transform(Number).refine(v => !Number.isNaN(v)),
+        ]);
+        const schema = z.object({
+            id: laxNumber,
+        });
+        const result = zodToJsonSchema(schema);
+
+        // It should pick 'number' as the most relevant type for this union
+        expect(result.properties).toEqual({
+            id: { type: 'number' },
+        });
+    });
+
+    it('handles nested objects with descriptions', () => {
+        const schema = z.object({
+            options: z.object({
+                retries: z.number().describe('Number of retries'),
+            }).describe('Operation options'),
+        });
+        const result = zodToJsonSchema(schema);
+
+        expect(result.properties).toEqual({
+            options: {
+                type: 'object',
+                description: 'Operation options',
+                properties: {
+                    retries: { type: 'number', description: 'Number of retries' },
+                },
+                required: ['retries'],
+            },
+        });
     });
 });
 

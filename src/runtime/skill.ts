@@ -100,50 +100,74 @@ function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
         return { type: 'string' };
     }
 
-    const typeName = (field as { constructor: { name: string } }).constructor.name;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const f = field as any;
+    const typeName = f.constructor?.name || '';
+    const description = f.description || f._def?.description;
 
-    // Unwrap optional
-    if (typeName.includes('Optional')) {
+    let res: Record<string, unknown> = { type: 'string' };
+
+    // Unwrap optional/nullable
+    if (typeName.includes('Optional') || typeName.includes('Nullable')) {
         const inner = f._def?.innerType || f._zod?.innerType;
-        if (inner) return zodFieldToJsonSchema(inner);
+        if (inner) {
+            res = zodFieldToJsonSchema(inner);
+        }
     }
-
-    // Unwrap nullable
-    if (typeName.includes('Nullable')) {
-        const inner = f._def?.innerType || f._zod?.innerType;
-        if (inner) return zodFieldToJsonSchema(inner);
+    // Unwrap effects (transforms, refines)
+    else if (typeName.includes('Effects')) {
+        const schema = f._def?.schema || f._zod?.schema;
+        if (schema) {
+            res = zodFieldToJsonSchema(schema);
+        }
     }
+    // Handle unions
+    else if (typeName.includes('Union')) {
+        const options = f._def?.options || f.options || [];
+        if (options.length > 0) {
+            // Simplify: pick the first option's type, or any non-string type if multiple exist
+            const schemas = options.map((opt: unknown) => zodFieldToJsonSchema(opt));
+            const distinctTypes = [...new Set(schemas.map((s: Record<string, unknown>) => s.type as string))];
 
+            if (distinctTypes.length === 1) {
+                res = { type: distinctTypes[0] };
+            } else {
+                // If mixed, use an array of types or just pick the most generic one
+                res = { type: distinctTypes.includes('number') ? 'number' : 'string' };
+            }
+        }
+    }
     // Basic types
-    if (typeName.includes('String')) {
-        return { type: 'string' };
+    else if (typeName.includes('String')) {
+        res = { type: 'string' };
     }
-    if (typeName.includes('Number')) {
-        return { type: 'number' };
+    else if (typeName.includes('Number')) {
+        res = { type: 'number' };
     }
-    if (typeName.includes('Boolean')) {
-        return { type: 'boolean' };
+    else if (typeName.includes('Boolean')) {
+        res = { type: 'boolean' };
     }
-    if (typeName.includes('Array')) {
-        const itemType = f._def?.type || f._zod?.def?.element;
-        return {
+    else if (typeName.includes('Array')) {
+        const itemType = f._def?.element || f._zod?.def?.element;
+        res = {
             type: 'array',
             items: itemType ? zodFieldToJsonSchema(itemType) : { type: 'string' },
         };
     }
-    if (typeName.includes('Enum')) {
+    else if (typeName.includes('Enum')) {
         const values = f._def?.values || f._zod?.def?.entries || [];
-        return {
+        res = {
             type: 'string',
             enum: Array.isArray(values) ? values : Object.keys(values),
         };
     }
-    if (typeName.includes('Object')) {
-        return zodToJsonSchema(field as z.ZodType<unknown>);
+    else if (typeName.includes('Object')) {
+        res = zodToJsonSchema(field as z.ZodType<unknown>);
     }
 
-    // Default fallback
-    return { type: 'string' };
+    if (description) {
+        res.description = description;
+    }
+
+    return res;
 }

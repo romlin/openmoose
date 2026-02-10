@@ -1,153 +1,141 @@
 /**
- * Browser automation tool -- runs Playwright scripts in a Docker sandbox
- * to perform web navigation, clicking, typing, and screenshot capture.
+ * Browser automation tool — delegates to a persistent Playwright daemon
+ * running in a Docker container for navigation, clicking, typing, and screenshots.
+ *
+ * The daemon returns indexed interactive elements so the LLM can refer to
+ * them by number (e.g. { action: "click", element: 3 }) instead of guessing
+ * CSS selectors.
  */
 
 import { z } from 'zod';
 import { defineSkill } from '../runtime/skill.js';
+import { getErrorMessage } from '../infra/errors.js';
+import { BrowserManager } from '../runtime/browser/manager.js';
+import { BROWSER_DAEMON_EXECUTE_URL } from '../runtime/browser/constants.js';
+import { config } from '../config/index.js';
 
-/** Default timeout for browser actions (ms). */
-const DEFAULT_BROWSER_TIMEOUT_MS = 30_000;
+/** Supported browser action types. */
+const ACTION_TYPES = ['navigate', 'click', 'type', 'wait', 'press', 'screenshot'] as const;
 
-/** Timeout for waiting on network idle (ms). */
-const NETWORK_IDLE_TIMEOUT_MS = 3_000;
+/** Number that also accepts string input (LLMs often stringify numbers). Rejects NaN. */
+const laxNumber = z.union([
+    z.number(),
+    z.string().transform(Number).refine(v => !Number.isNaN(v), { message: 'Expected a numeric string' }),
+]);
 
-/** Timeout for waiting on a selector (ms). */
-const SELECTOR_WAIT_TIMEOUT_MS = 5_000;
+/** Schema for a single action entry. */
+const ActionEntrySchema = z.object({
+    type: z.enum(ACTION_TYPES).optional(),
+    action: z.enum(ACTION_TYPES).optional(), // LLM alias
+    element: laxNumber.optional().describe('Index of an interactive element from the snapshot.'),
+    url: z.string().optional(),
+    selector: z.string().optional(),
+    text: z.string().optional(),
+    key: z.string().optional(),
+    ms: laxNumber.optional(),
+});
 
-// Schema that supports both 'type' and 'action' for LLM resilience
-const BrowserActionSchema = z.object({
-    actions: z.array(z.object({
-        type: z.enum(['navigate', 'click', 'type', 'wait', 'press', 'screenshot']).optional(),
-        action: z.enum(['navigate', 'click', 'type', 'wait', 'press', 'screenshot']).optional(), // LLM alias
-        url: z.string().optional(),
-        selector: z.string().optional(),
-        text: z.string().optional(),
-        key: z.string().optional(),
-        ms: z.number().optional(),
-    })).describe('List of high-level actions to perform. You can use "type" or "action" to specify the command.'),
-    timeout: z.number().optional().default(DEFAULT_BROWSER_TIMEOUT_MS),
+type ActionEntry = z.infer<typeof ActionEntrySchema>;
+
+/** Full schema — extends ActionEntrySchema with actions array and control fields. */
+const BrowserActionSchema = ActionEntrySchema.extend({
+    actions: z.array(ActionEntrySchema).optional()
+        .describe('List of actions to perform.'),
+    _raw: z.string().optional(),
+    timeout: laxNumber.optional().default(config.sandbox.defaultTimeoutMs),
 });
 
 /**
- * browser_action: An LLM-friendly high-level interface for browser control.
+ * Merge top-level fields and the actions array into a single list.
+ * Handles LLM-friendly shorthands (e.g. `{ url: "..." }` → navigate).
+ */
+function normalizeActions(args: z.infer<typeof BrowserActionSchema>): ActionEntry[] {
+    const list: ActionEntry[] = [];
+
+    // Process entries from the actions array, resolving type for each
+    for (const entry of (args.actions || [])) {
+        let url = entry.url;
+        if (!url && (entry as Record<string, unknown>)._raw) {
+            const raw = String((entry as Record<string, unknown>)._raw).trim();
+            if (raw.startsWith('http')) url = raw;
+        }
+        const resolved = entry.type || entry.action || (url ? 'navigate' : undefined);
+        if (!resolved) continue; // skip malformed entries with no type
+        list.push({
+            type: resolved,
+            url,
+            element: entry.element,
+            selector: entry.selector,
+            text: entry.text,
+            key: entry.key,
+            ms: entry.ms,
+        });
+    }
+
+    // Process top-level fields
+    let url = args.url;
+    if (!url && args._raw) {
+        const raw = args._raw.trim();
+        if (raw.startsWith('http')) url = raw;
+    }
+    const resolved = args.type || args.action || (url ? 'navigate' : undefined);
+    if (resolved) {
+        list.push({
+            type: resolved,
+            url,
+            element: args.element,
+            selector: args.selector,
+            text: args.text,
+            key: args.key,
+            ms: args.ms,
+        });
+    }
+
+    return list;
+}
+
+/**
+ * browser_action — LLM-friendly high-level interface for browser control.
+ * Use element indices from the snapshot, or fall back to url/selector.
  */
 export const browserActionSkill = defineSkill({
     name: 'browser_action',
-    description: 'Control the browser using high-level actions. Automatically saves a debugging screenshot to .moose/data/browser-previews/latest.png',
+    description: 'Control the browser. Use element index from snapshot, or url/selector for direct access.',
     isVerified: false,
     argsSchema: BrowserActionSchema,
-    execute: async (args, context) => {
+    execute: async (args) => {
         try {
-            const runnerCode = `
-const { chromium } = require('playwright');
-const fs = require('fs');
+            await BrowserManager.ensureRunning();
 
-(async () => {
-    const browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    });
-    const page = await context.newPage();
+            const actions = normalizeActions(args);
+            if (actions.length === 0) {
+                return { success: false, error: "No valid actions provided. Specify 'url', 'element', or 'actions'." };
+            }
 
-    async function getSnapshot(page) {
-        try {
-            await page.waitForLoadState('networkidle', { timeout: ${NETWORK_IDLE_TIMEOUT_MS} }).catch(() => {});
-            const tree = await page.accessibility.snapshot();
-            const elements = [];
-            function traverse(node) {
-                if (node.name || node.role === 'link' || node.role === 'button') {
-                  elements.push(\`[\${node.role}] "\${node.name || ''}" \${node.description || ''}\`);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), args.timeout);
+
+            try {
+                const res = await fetch(BROWSER_DAEMON_EXECUTE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actions }),
+                    signal: controller.signal,
+                });
+
+                if (!res.ok) {
+                    return { success: false, error: `Daemon error: ${res.statusText}` };
                 }
-                if (node.children) node.children.forEach(traverse);
+
+                return await res.json();
+            } finally {
+                clearTimeout(timer);
             }
-            if (tree) traverse(tree);
-            return elements.slice(0, 50).join('\\n');
-        } catch (e) { return "Snapshot failed: " + e.message; }
-    }
-
-    try {
-        const rawActions = ${JSON.stringify(args.actions)};
-        for (const raw of rawActions) {
-            const type = raw.type || raw.action;
-            if (!type) continue;
-
-            switch (type) {
-                case 'navigate':
-                    await page.goto(raw.url, { waitUntil: 'networkidle' });
-                    break;
-                case 'click':
-                    await page.click(raw.selector || \`text="\${raw.text}"\`);
-                    break;
-                case 'type':
-                    await page.fill(raw.selector, raw.text);
-                    break;
-                case 'press':
-                    await page.keyboard.press(raw.key);
-                    break;
-                case 'wait':
-                    if (raw.selector) await page.waitForSelector(raw.selector, { timeout: ${SELECTOR_WAIT_TIMEOUT_MS} });
-                    else if (raw.ms) await page.waitForTimeout(raw.ms);
-                    break;
-            }
-        }
-
-        await page.screenshot({ path: '/workspace/.moose/data/browser-previews/latest.png' });
-
-        const snapshot = await getSnapshot(page);
-        console.log("PLAYWRIGHT_RESULT:" + JSON.stringify({
-            success: true,
-            snapshot,
-            url: page.url(),
-            preview: ".moose/data/browser-previews/latest.png"
-        }));
-    } catch (err) {
-        try { await page.screenshot({ path: '/workspace/.moose/data/browser-previews/error.png' }); } catch (e) { /* screenshot failed */ }
-        console.error("PLAYWRIGHT_ERROR:" + JSON.stringify({
-            success: false,
-            error: err.message,
-            preview: ".moose/data/browser-previews/error.png"
-        }));
-        process.exit(1);
-    } finally {
-        await browser.close();
-    }
-})();
-      `;
-
-            const result = await context.sandbox.runPlaywright(runnerCode, {
-                timeout: args.timeout,
-                network: 'bridge'
-            });
-
-            if (result.exitCode !== 0 && !result.stdout.includes("PLAYWRIGHT_RESULT")) {
-                return { success: false, error: result.stderr || 'Browser action failed' };
-            }
-
-            const match = result.stdout.match(/PLAYWRIGHT_RESULT:(.*)/);
-            if (match) {
-                try {
-                    return JSON.parse(match[1]);
-                } catch {
-                    return { success: true, data: match[1] };
-                }
-            }
-
-            const errorMatch = result.stderr.match(/PLAYWRIGHT_ERROR:(.*)/);
-            if (errorMatch) {
-                try {
-                    return JSON.parse(errorMatch[1]);
-                } catch {
-                    return { success: false, error: errorMatch[1] };
-                }
-            }
-
-            return { success: true, data: result.stdout };
         } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : String(error) };
+            if (error instanceof Error && error.name === 'AbortError') {
+                return { success: false, error: 'Browser action timed out.' };
+            }
+            return { success: false, error: getErrorMessage(error) };
         }
     },
 });

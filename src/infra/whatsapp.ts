@@ -23,9 +23,6 @@ import ora from 'ora';
 import { config } from '../config/index.js';
 import { getWASocketConfig } from './whatsapp-socket.js';
 
-/** Delay before reconnecting after a non-logout disconnect. */
-const RECONNECT_DELAY_MS = 5_000;
-
 /** Normalized representation of an incoming WhatsApp message. */
 export interface WhatsAppMessage {
     jid: string;
@@ -120,48 +117,10 @@ export class WhatsAppManager extends EventEmitter {
             if (this.saveCreds) await this.saveCreds();
         });
 
-        // Track contacts
-        this.sock.ev.on('contacts.upsert', async (contacts) => {
-            logger.debug(`Received ${contacts.length} new contacts (upsert)`, 'WhatsApp');
-            let changed = false;
-            for (const contact of contacts) {
-                const name = contact.name || contact.notify || contact.verifiedName;
-                if (name && contact.id) {
-                    this.contacts[name] = contact.id;
-                    changed = true;
-                }
-            }
-            if (changed) await this.saveContacts();
-        });
-
-        this.sock.ev.on('contacts.update', async (updates) => {
-            logger.debug(`Received ${updates.length} contact updates`, 'WhatsApp');
-            let changed = false;
-            for (const update of updates) {
-                if (update.id && (update.name || update.notify)) {
-                    const name = update.name || update.notify;
-                    if (name) {
-                        this.contacts[name] = update.id;
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) await this.saveContacts();
-        });
-
-        // Bulk sync from history
-        this.sock.ev.on('messaging-history.set', async ({ contacts }) => {
-            logger.debug(`Bulk syncing ${contacts.length} contacts from history`, 'WhatsApp');
-            let changed = false;
-            for (const contact of contacts) {
-                const name = contact.name || contact.notify || contact.verifiedName;
-                if (name && contact.id) {
-                    this.contacts[name] = contact.id;
-                    changed = true;
-                }
-            }
-            if (changed) await this.saveContacts();
-        });
+        // Track contacts from all event sources
+        this.sock.ev.on('contacts.upsert', (contacts) => this.mergeContacts(contacts, 'upsert'));
+        this.sock.ev.on('contacts.update', (updates) => this.mergeContacts(updates, 'update'));
+        this.sock.ev.on('messaging-history.set', ({ contacts }) => this.mergeContacts(contacts, 'history'));
 
         this.sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
@@ -178,7 +137,7 @@ export class WhatsAppManager extends EventEmitter {
                 if (shouldReconnect) {
                     logger.warn('WhatsApp connection closed, reconnecting...', 'WhatsApp');
                     this.spinner.text = 'Reconnecting...';
-                    setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
+                    setTimeout(() => this.connect(), config.whatsapp.reconnectDelayMs);
                 } else {
                     this.spinner.fail('Session expired or Logged out.');
                     logger.important('WhatsApp authentication required! Please run: pnpm auth', 'WhatsApp');
@@ -240,6 +199,20 @@ export class WhatsAppManager extends EventEmitter {
                 }
             }
         });
+    }
+
+    /** Merge a batch of contacts into the local map and persist if changed. */
+    private async mergeContacts(contacts: Array<{ id?: string | null; name?: string | null; notify?: string | null; verifiedName?: string | null }>, source: string) {
+        logger.debug(`Processing ${contacts.length} contacts from ${source}`, 'WhatsApp');
+        let changed = false;
+        for (const c of contacts) {
+            const name = c.name || c.notify || c.verifiedName;
+            if (name && c.id && this.contacts[name] !== c.id) {
+                this.contacts[name] = c.id;
+                changed = true;
+            }
+        }
+        if (changed) await this.saveContacts();
     }
 
     /** Send a text message to a WhatsApp JID. */

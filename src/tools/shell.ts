@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { defineSkill } from '../runtime/skill.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 const ShellArgsSchema = z.object({
     command: z.string().describe('Bash command to execute')
@@ -21,7 +22,7 @@ export const shellSkill = defineSkill<ShellArgs, { stdout: string; stderr: strin
             const result = await context.sandbox.run(args.command);
             return { success: true, data: result };
         } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : String(error) };
+            return { success: false, error: getErrorMessage(error) };
         }
     }
 });

@@ -20,26 +20,26 @@
     "assistant",
     "local-first",
     "privacy",
-    "ollama",
     "whatsapp",
     "llm",
     "tts",
     "voice"
   ],
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "gateway": "tsx src/gateway/server.ts",
     "auth": "tsx src/cli/whatsapp-auth.ts",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/runtime/browser && cp src/runtime/browser/daemon.js src/runtime/browser/Dockerfile dist/runtime/browser/",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "test": "vitest"
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@hapi/boom": "10.0.1",
     "@hono/node-server": "1.19.9",
+    "@huggingface/transformers": "^3.8.1",
     "@lancedb/lancedb": "0.24.1",
     "@whiskeysockets/baileys": "7.0.0-rc.9",
     "apache-arrow": "18.1.0",
@@ -49,7 +49,7 @@
     "dotenv": "17.2.4",
     "hono": "4.11.8",
     "js-yaml": "4.1.1",
-    "ollama": "0.6.3",
+    "node-llama-cpp": "^3.15.1",
     "onnxruntime-node": "1.24.1",
     "ora": "9.3.0",
     "pino": "10.3.0",
@@ -66,10 +66,16 @@
     "@types/ws": "8.18.1",
     "@typescript-eslint/eslint-plugin": "8.54.0",
     "@typescript-eslint/parser": "8.54.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "9.39.2",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.54.0",
     "vitest": "4.0.18"
+  },
+  "pnpm": {
+    "overrides": {
+      "tar": ">=7.5.7"
+    }
   }
 }

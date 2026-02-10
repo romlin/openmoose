@@ -104,7 +104,6 @@ export function buildSkillsPrompt(entries: SkillEntry[]): string {
         lines.push('  <capability>');
         lines.push(`    <name>${escapeXml(skill.name)}</name>`);
         lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-        lines.push(`    <location>${escapeXml(skill.location)}</location>`);
         lines.push('  </capability>');
     }
 

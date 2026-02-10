@@ -18,7 +18,6 @@ describe('buildSkillsPrompt', () => {
         expect(result).toContain('</moose_capabilities>');
         expect(result).toContain('<name>weather</name>');
         expect(result).toContain('<description>Get current weather</description>');
-        expect(result).toContain('<location>/skills/weather/SKILL.md</location>');
     });
 
     it('generates XML for multiple entries', () => {

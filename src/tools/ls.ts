@@ -4,6 +4,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertSafePath } from '../infra/safe-path.js';
 import { logger } from '../infra/logger.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /**
  * List directory skill - allows agent to list files and directories
@@ -40,7 +41,7 @@ export const listSkill = defineSkill({
         } catch (error) {
             return {
                 success: false,
-                error: `Failed to list directory: ${error instanceof Error ? error.message : String(error)}`
+                error: `Failed to list directory: ${getErrorMessage(error)}`
             };
         }
     }

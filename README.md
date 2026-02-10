@@ -14,13 +14,13 @@ pnpm gateway            # start the gateway (terminal 1)
 pnpm dev talk           # interactive chat (terminal 2)
 ```
 
-Local LLM via Ollama. Sandboxed code execution. Vector memory. WhatsApp. Voice. Extensible YAML skills. Zero cloud dependency.
+Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp. Voice. Extensible YAML skills. Zero cloud dependency.
 
 ## Features
 
-- **Local Brain** -- Powered by [Ollama](https://ollama.com) (Ministral-3 3B default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
-- **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via embeddings, bypassing the LLM entirely for zero-latency responses.
-- **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents for deep knowledge retrieval.
+- **Local Brain** -- Powered by an integrated local engine (`node-llama-cpp`, Ministral-8B Reasoning default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
+- **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via local embeddings (Transformers.js), bypassing the LLM entirely for zero-latency responses.
+- **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents using local embeddings.
 - **Secure Sandbox** -- All code execution happens inside non-privileged, read-only Docker containers with dropped capabilities and resource limits.
 - **WhatsApp Integration** -- Chat with your assistant through WhatsApp. Responds to DMs automatically and to group messages prefixed with "moose".
 - **Voice Output** -- Text-to-speech via Supertonic 2 ONNX models (167x faster than real-time, 10 voice styles, 5 languages).
@@ -35,7 +35,6 @@ Local LLM via Ollama. Sandboxed code execution. Vector memory. WhatsApp. Voice. 
 | [Node.js](https://nodejs.org) | >= 20.0.0 | Runtime |
 | [Docker](https://docker.com) | Latest | Sandbox execution |
 | [git-lfs](https://git-lfs.com) | Latest | TTS model download |
-| [Ollama](https://ollama.com) | Latest | Local LLM + embeddings |
 | [pnpm](https://pnpm.io) | Latest | Package manager |
 
 ## Quick Start
@@ -74,6 +73,17 @@ pnpm dev talk
 pnpm dev chat "hello" --voice
 ```
 
+### 4. Run with Docker Compose (Alternative)
+
+If you prefer to run the gateway in a containerized environment:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+The gateway will be accessible at `http://localhost:18789`. Your models and vector data are persisted in `./models` and `./.moose`.
+
 ## Usage
 
 ### CLI Commands
@@ -108,12 +118,11 @@ Copy `.env.example` to `.env` and customize:
 # Gateway
 GATEWAY_PORT=18789              # HTTP/WebSocket server port
 
-# LLM Provider ('ollama' for local, 'mistral' for cloud)
-LLM_PROVIDER=ollama
+# LLM Provider ('node-llama-cpp' for local, 'mistral' for cloud)
+LLM_PROVIDER=node-llama-cpp
 
-# Ollama (local)
-OLLAMA_HOST=http://127.0.0.1:11434
-OLLAMA_MODEL=ministral-3:3b
+# Local LLM (node-llama-cpp)
+LLAMA_CPP_MODEL_PATH=models/llama-cpp/ministral-8b-reasoning-q4km.gguf
 
 # Mistral AI (cloud)
 MISTRAL_MODEL=mistral-large-latest
@@ -148,10 +157,11 @@ examples:
 args:
   city:
     patterns:
-      - "(?:weather|forecast)\\s+(?:in|for|at)\\s+(.+)"
-      - "(.+?)\\s+(?:weather|forecast)"
+      - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
     fallback: Stockholm
-command: "curl -s 'wttr.in/{{city|u}}?format=3'"
+command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\""
 host: true
 ```
 
@@ -164,7 +174,7 @@ host: true
 | `examples` | Yes | Phrases that trigger this skill (used for semantic matching) |
 | `args` | No | Named arguments extracted via regex patterns |
 | `command` | Yes | Shell command with `{{arg}}` placeholders |
-| `host` | No | Run on host (`true`) or in Docker sandbox (`false`, default) |
+| `host` | No | Run on host (`true`) or in Docker sandbox (`false`, default). Host mode requires dependencies (like `python3` or `curl`) to be installed on the local system. |
 | `image` | No | Custom Docker image for sandboxed execution |
 
 ### Placeholders
@@ -192,33 +202,29 @@ The LLM has access to these tools for complex tasks:
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────┐
-│                    Gateway                        │
-│  HTTP (/health) + WebSocket (agent.run, etc.)     │
-├──────────────────────────────────────────────────┤
-│                                                   │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │  Brain   │  │  Memory  │  │ Semantic Router │  │
-│  │ Ollama/  │  │ LanceDB  │  │  Embedding-     │  │
-│  │ Mistral  │  │ + Ollama │  │  based matching │  │
-│  └─────────┘  └──────────┘  └─────────────────┘  │
-│                                                   │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │ Sandbox │  │  Audio   │  │    WhatsApp     │  │
-│  │ Docker  │  │ Supertonic│  │    Baileys      │  │
-│  └─────────┘  └──────────┘  └─────────────────┘  │
-│                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │              Agent Runner                    │  │
-│  │  Deconstruct → Route → Execute → Capture    │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │          Skill Registry + Scheduler          │  │
-│  │  Built-in tools + YAML skills + Cron tasks   │  │
-│  └─────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    INPUT[CLI / WhatsApp / HTTP] --> GW[Gateway]
+    GW --> ROUTER{Semantic Router}
+
+    ROUTER -->|direct match| SKILLS[Skill Registry]
+    ROUTER -->|complex query| RUNNER[Agent Runner]
+
+    RUNNER -->|thinks| BRAIN[Brain]
+    RUNNER -->|recalls| MEM[Memory]
+    RUNNER -->|acts| SKILLS
+    RUNNER -->|speaks| TTS[Voice]
+
+    SKILLS -->|sandboxed| SBX[Docker Container]
+    SKILLS -->|trusted| HOST[Host Machine]
+
+    classDef hub fill:#2563eb,stroke:#1d4ed8,color:#fff
+    classDef decision fill:#f59e0b,stroke:#d97706,color:#000
+    classDef node fill:#dbeafe,stroke:#2563eb,color:#1e40af
+
+    class GW,RUNNER hub
+    class ROUTER decision
+    class INPUT,BRAIN,MEM,SKILLS,TTS,SBX,HOST node
 ```
 
 ### Project Structure
@@ -284,7 +290,8 @@ OpenMoose is built on these open-source projects and models:
 | [Hono](https://hono.dev) | MIT | Yes | Web framework |
 | [js-yaml](https://github.com/nodeca/js-yaml) | MIT | Yes | YAML parsing |
 | [LanceDB](https://lancedb.com) | Apache-2.0 | Yes | Vector database |
-| [Ollama](https://ollama.com) | MIT | Yes | Local LLM client |
+| [node-llama-cpp](https://node-llama-cpp.js.org/) | MIT | Yes | Integrated LLM engine |
+| [@huggingface/transformers](https://huggingface.co/docs/transformers.js) | Apache-2.0 | Yes | Integrated embeddings engine |
 | [ONNX Runtime](https://onnxruntime.ai) | MIT | Yes | ML inference engine (TTS) |
 | [Ora](https://github.com/sindresorhus/ora) | MIT | Yes | Terminal spinners |
 | [Pino](https://getpino.io) | MIT | Yes | Logger |
@@ -297,8 +304,8 @@ OpenMoose is built on these open-source projects and models:
 
 | Model | License | Commercial | Description |
 |---|---|---|---|
-| [Ministral-3 3B](https://ollama.com/library/ministral-3) | Apache-2.0 | Yes | Default LLM (via Ollama) |
-| [nomic-embed-text](https://ollama.com/library/nomic-embed-text) | Apache-2.0 | Yes | Embedding model (via Ollama) |
+| [Ministral-8B Reasoning](https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF) | Apache-2.0 | Yes | Default LLM (integrated GGUF) |
+| [all-MiniLM-L6-v2](https://huggingface.co/xenova/all-MiniLM-L6-v2) | Apache-2.0 | Yes | Embedding model (integrated) |
 | [Supertonic 2](https://huggingface.co/Supertone/supertonic-2) | Open RAIL-M | Conditional | Text-to-speech (ONNX) |
 
 ### Dev Dependencies

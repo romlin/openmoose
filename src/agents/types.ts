@@ -5,9 +5,6 @@
 
 /** Options for constructing a LocalBrain instance. */
 export interface BrainOptions {
-    model?: string;
-    host?: string;
-    mistralApiKey?: string;
     memory: import('../infra/memory.js').LocalMemory;
     registry: import('../runtime/registry.js').SkillRegistry;
     skillsPrompt?: string;

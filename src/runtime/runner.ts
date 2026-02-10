@@ -12,16 +12,11 @@ import { SkillContext } from './skill.js';
 import { TaskScheduler } from './scheduler.js';
 import { WhatsAppManager } from '../infra/whatsapp.js';
 import { SemanticRouter } from './semantic-router.js';
-import { builtInRoutes } from './skill-routes.js';
 import { PortableSkillLoader } from './portable-skills.js';
 import { logger } from '../infra/logger.js';
+import { getErrorMessage } from '../infra/errors.js';
+import { config } from '../config/index.js';
 import path from 'node:path';
-
-/** Maximum number of LLM tool-call iterations before halting. */
-const MAX_TOOL_ITERATIONS = 10;
-
-/** Keywords that trigger automatic fact capture. */
-const AUTO_CAPTURE_TRIGGERS = ['remember', 'my name is', 'i like', 'favorite'];
 
 /**
  * AgentRunner: Orchestrates the interaction between the Brain, Hands, and Memory.
@@ -42,10 +37,6 @@ export class AgentRunner {
     }
 
     async init() {
-        for (const route of builtInRoutes) {
-            this.router.register(route);
-        }
-
         const skillsDir = path.join(process.cwd(), 'skills');
         const portableSkills = await PortableSkillLoader.loadDirectory(skillsDir);
 
@@ -53,7 +44,7 @@ export class AgentRunner {
             this.router.register(route);
         }
 
-        logger.debug(`Initialized with ${builtInRoutes.length + portableSkills.length} skills`, 'Runner');
+        logger.debug(`Initialized with ${portableSkills.length} skills`, 'Runner');
     }
 
     /** Build a shared SkillContext from the runner's services. */
@@ -71,7 +62,8 @@ export class AgentRunner {
         message: string,
         options: {
             onDelta: (text: string) => void,
-            onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void
+            onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void,
+            onToolResult?: (payload: { name: string, success: boolean, error?: string }) => void
         },
         history: { role: string, content: string }[] = []
     ) {
@@ -79,28 +71,42 @@ export class AgentRunner {
         const tools = this.registry.getOpenAITools();
         const skillContext = this.buildContext();
 
-        // STEP 1: Try Deconstruction + Semantic Router (fast, deterministic)
+        // STEP 1: Try Semantic Router on the raw message first (fastest path)
+        const directRouteResult = await this.router.tryExecute(message, message, '', skillContext);
+        if (directRouteResult.handled && directRouteResult.success) {
+            const summary = await this.summarizeResults(message, [message], [{ action: message, result: directRouteResult.result || '' }], history, options.onDelta, formatter);
+            await this.autoCapture(message);
+            return summary;
+        }
+
+        // STEP 2: Try Deconstruction (handles multi-intent or complex queries)
         const actions = await this.deconstructMessage(message);
         const routerResults: { action: string, result: string }[] = [];
         let cumulativeContext = '';
 
-        for (const action of actions) {
-            logger.debug(`Executing step: "${action}"`, 'Runner');
+        // If deconstruction didn't actually split it, and we already tried direct route, 
+        // we skip the loop if the router already failed for this specific string.
+        if (actions.length === 1 && actions[0] === message && directRouteResult.handled === false) {
+            logger.debug('Skipping redundant router check after failed direct attempt', 'Runner');
+        } else {
+            for (const action of actions) {
+                logger.debug(`Executing step: "${action}"`, 'Runner');
 
-            const routeResult = await this.router.tryExecute(action, action, cumulativeContext, skillContext);
+                const routeResult = await this.router.tryExecute(action, action, cumulativeContext, skillContext);
 
-            if (routeResult.handled) {
-                if (routeResult.success) {
-                    logger.success(`Step success: ${routeResult.result}`, 'Runner');
-                    routerResults.push({ action, result: routeResult.result || '' });
-                    cumulativeContext += (cumulativeContext ? '\n' : '') + `Result of "${action}": ${routeResult.result}`;
+                if (routeResult.handled) {
+                    if (routeResult.success) {
+                        logger.success(`Step success: ${routeResult.result}`, 'Runner');
+                        routerResults.push({ action, result: routeResult.result || '' });
+                        cumulativeContext += (cumulativeContext ? '\n' : '') + `Result of "${action}": ${routeResult.result}`;
+                    } else {
+                        logger.error(`Step failed: ${routeResult.result}`, 'Runner');
+                        routerResults.push({ action, result: `ERROR: ${routeResult.result}` });
+                        break;
+                    }
                 } else {
-                    logger.error(`Step failed: ${routeResult.result}`, 'Runner');
-                    routerResults.push({ action, result: `ERROR: ${routeResult.result}` });
-                    break;
+                    logger.info(`Step not handled by router: ${action}`, 'Runner');
                 }
-            } else {
-                logger.info(`Step not handled by router: ${action}`, 'Runner');
             }
         }
 
@@ -110,13 +116,13 @@ export class AgentRunner {
             return summary;
         }
 
-        // STEP 2: Fall back to full LLM with tools
+        // STEP 3: Fall back to full LLM with tools
         const currentHistory = [...history];
         let currentMessage = message;
         let accumulatedResponse = '';
         let iterations = 0;
 
-        while (iterations < MAX_TOOL_ITERATIONS) {
+        while (iterations < config.runner.maxToolIterations) {
             const { fullResponse, toolCalls } = await this.streamAndCollect(
                 currentMessage, currentHistory, tools, formatter, options.onDelta
             );
@@ -126,7 +132,7 @@ export class AgentRunner {
             currentHistory.push({ role: 'assistant', content: fullResponse });
 
             if (toolCalls && toolCalls.length > 0) {
-                const results = await this.executeToolCalls(toolCalls, options.onToolCall);
+                const results = await this.executeToolCalls(toolCalls, options.onToolCall, options.onToolResult);
                 currentMessage = `Tool results: ${JSON.stringify(results)}. Please continue if the task is not complete, or provide a final answer.`;
                 iterations++;
             } else {
@@ -172,7 +178,8 @@ export class AgentRunner {
 
     private async executeToolCalls(
         toolCalls: ToolCall[],
-        onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void
+        onToolCall?: (payload: { name: string, args: Record<string, unknown> }) => void,
+        onToolResult?: (payload: { name: string, success: boolean, error?: string }) => void
     ): Promise<{ tool: string; result: unknown }[]> {
         const results: { tool: string; result: unknown }[] = [];
         logger.info(`Executing ${toolCalls.length} tool call(s).`, 'Runner');
@@ -185,14 +192,72 @@ export class AgentRunner {
 
             try {
                 args = JSON.parse(tc.function.arguments || '{}');
-            } catch {
-                logger.error(`Failed to parse arguments for ${name}`, 'Runner');
+            } catch (err) {
+                const raw = tc.function.arguments?.trim() || '';
+                // LLMs sometimes concatenate multiple JSON objects ("{}{}").
+                // Use bracket-counting to split top-level objects safely,
+                // respecting string literals so `}{` inside strings is ignored.
+                const parts: string[] = [];
+                let depth = 0;
+                let inString = false;
+                let escape = false;
+                let start = -1;
+                for (let i = 0; i < raw.length; i++) {
+                    const ch = raw[i];
+                    if (escape) { escape = false; continue; }
+                    if (ch === '\\' && inString) { escape = true; continue; }
+                    if (ch === '"') { inString = !inString; continue; }
+                    if (inString) continue;
+                    if (ch === '{') { if (depth === 0) start = i; depth++; }
+                    else if (ch === '}') {
+                        depth--;
+                        if (depth === 0 && start !== -1) {
+                            parts.push(raw.slice(start, i + 1));
+                            start = -1;
+                        }
+                    }
+                }
+                let recovered = false;
+                if (parts.length > 0) {
+                    try {
+                        args = JSON.parse(parts[0]);
+                        recovered = true;
+                        if (parts.length > 1) {
+                            logger.warn(`Recovered first of ${parts.length} concatenated JSON objects for ${name}.`, 'Runner');
+                        }
+                    } catch { /* fall through to _raw */ }
+                }
+                if (!recovered) {
+                    const errorMsg = `Invalid JSON arguments for ${name}: ${getErrorMessage(err)}`;
+                    logger.error(errorMsg, 'Runner');
+                    results.push({ tool: name, result: { success: false, error: errorMsg } });
+                    onToolResult?.({ name, success: false, error: errorMsg });
+                    continue;
+                }
             }
 
             onToolCall?.({ name, args });
             logger.info(`Executing tool: ${name}`, 'Runner');
 
-            const result = await this.registry.execute(name, args, context);
+            let result: { success: boolean; error?: string };
+            try {
+                result = await this.registry.execute(name, args, context);
+            } catch (err) {
+                const errorMessage = getErrorMessage(err);
+                const errorTrunc = errorMessage.length > 200 ? `${errorMessage.slice(0, 200)}...` : errorMessage;
+                logger.error(`Critical tool failure in ${name}: ${errorTrunc}`, 'Runner');
+                result = { success: false, error: `Execution error: ${errorTrunc}` };
+            }
+
+            if (result.success) {
+                logger.success(`Tool ${name} succeeded.`, 'Runner');
+            } else {
+                const safeError = typeof result.error === 'string'
+                    ? result.error.slice(0, 120)
+                    : 'unknown error';
+                logger.warn(`Tool ${name} failed: ${safeError}`, 'Runner');
+            }
+            onToolResult?.({ name, success: result.success, error: result.error as string | undefined });
             results.push({ tool: name, result });
         }
 
@@ -235,7 +300,7 @@ Return only a valid JSON array of strings. No conversational text.`;
     }
 
     private async autoCapture(message: string) {
-        if (AUTO_CAPTURE_TRIGGERS.some(t => message.toLowerCase().includes(t))) {
+        if (config.runner.autoCaptureTriggers.some(t => message.toLowerCase().includes(t))) {
             await this.memory.store(message);
             logger.success('Auto-captured fact to long-term memory.', 'Memory');
         }

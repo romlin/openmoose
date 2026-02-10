@@ -7,15 +7,15 @@ OpenMoose is a local-first AI assistant built for privacy, speed, and extensibil
 When you send a message, the gateway processes it through a pipeline:
 
 1. **Intent Deconstruction** -- Complex queries like "check the weather in Berlin and send it to Vanja on WhatsApp" are broken into atomic actions ("get weather in Berlin", "send result to Vanja").
-2. **Semantic Routing** -- Each action is matched against registered skills using embedding similarity (nomic-embed-text). If confidence exceeds 0.72, the skill executes instantly without touching the LLM.
-3. **LLM Fallback** -- Actions that don't match a skill route are handled by the full LLM with tool calling. The brain iterates up to 10 tool call rounds to complete the task.
+2. **Semantic Routing** -- Each action is matched against registered skills using local embedding similarity (Transformers.js). If confidence exceeds 0.68, the skill executes instantly without touching the LLM.
+3. **LLM Fallback** -- Actions that don't match a skill route are handled by the full integrated LLM (`node-llama-cpp`) with tool calling. The brain iterates up to 10 tool call rounds to complete the task.
 4. **Auto-capture** -- After responding, the system silently extracts useful facts from the conversation and stores them in vector memory for future recall.
 
 ## The Brain
 
 The LLM interface uses the OpenAI-compatible chat completions API, which means it works with any provider that speaks that protocol:
 
-- **Ollama** (default) -- Ministral-3 3B running locally. Fast, private, free.
+- **Integrated Local Engine** (default) -- Ministral-8B Reasoning running via `node-llama-cpp`. Fast, private, free.
 - **Mistral AI** -- Cloud-hosted models for higher capability when needed.
 
 The brain supports streaming responses and native tool calling. System prompts are dynamically constructed with the current date/time, available tools, memory context, and skill definitions.
@@ -27,7 +27,7 @@ A dual-purpose vector database powered by LanceDB:
 - **Chat Memory** -- Facts the assistant learns from conversations (e.g., "the user's name is Henric", "they prefer Python over JavaScript"). These are injected into the system prompt when semantically relevant to the current query.
 - **Document Memory** -- Markdown files in the `docs/` directory are automatically chunked, embedded, and indexed on gateway startup. This lets the assistant answer questions grounded in your local knowledge base.
 
-Embeddings are generated locally via Ollama's nomic-embed-text model.
+Embeddings are generated locally via Transformers.js (`xenova/all-MiniLM-L6-v2`).
 
 ## The Sandbox
 
@@ -50,7 +50,7 @@ Text-to-speech uses Supertonic 2, a high-performance ONNX model that generates a
 
 The router pre-computes embeddings for skill examples at startup. When a message arrives, it computes the message embedding and finds the closest skill via cosine similarity. This enables sub-millisecond intent matching for common tasks (time, weather, messaging) without any LLM inference.
 
-Skills scoring above 0.72 are executed directly. Skills scoring between 0.5 and 0.72 are noted but deferred to the LLM for confirmation.
+Skills scoring above 0.68 are executed directly. Skills scoring between 0.5 and 0.68 are noted but deferred to the LLM for confirmation.
 
 ## Portable Skills
 

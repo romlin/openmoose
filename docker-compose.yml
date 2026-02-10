@@ -1,0 +1,35 @@
+services:
+  gateway:
+    build: .
+    container_name: openmoose-gateway
+    ports:
+      - "${GATEWAY_PORT:-18789}:${GATEWAY_PORT:-18789}"
+    volumes:
+      # SECURITY: The Docker socket is required so the gateway can manage
+      # short-lived sandbox and browser containers (build images, start/stop).
+      # This grants full Docker daemon access — only expose the gateway on
+      # trusted networks.  For hardened deployments consider a socket-proxy
+      # such as tecnativa/docker-socket-proxy with limited API access.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.moose:/app/.moose
+      - ./models:/app/models
+      - ./docs:/app/docs
+    environment:
+      - GATEWAY_PORT=${GATEWAY_PORT:-18789}
+      - LLM_PROVIDER=${LLM_PROVIDER:-node-llama-cpp}
+      - LLAMA_CPP_GPU=${LLAMA_CPP_GPU:-auto}
+      - LLAMA_CPP_MODEL_PATH=${LLAMA_CPP_MODEL_PATH:-/app/models/llama-cpp/ministral-8b-reasoning-q4km.gguf}
+      - BROWSER_PROFILE_DIR=/app/.moose/data/browser-profiles
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+networks:
+  default:
+    name: openmoose-net

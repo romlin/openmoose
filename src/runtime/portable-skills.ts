@@ -9,9 +9,8 @@ import yaml from 'js-yaml';
 import { SkillRoute } from './semantic-router.js';
 import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
-
-/** Default execution timeout for portable skills (ms). */
-const SKILL_TIMEOUT_MS = 15_000;
+import { getErrorMessage } from '../infra/errors.js';
+import { config } from '../config/index.js';
 
 interface PortableSkillDef {
     name: string;
@@ -112,7 +111,7 @@ export class PortableSkillLoader {
                         }
 
                         const result = await sandboxToUse.run(finalCommand, {
-                            timeout: SKILL_TIMEOUT_MS,
+                            timeout: config.skills.timeoutMs,
                             image: def.image,
                             workspacePath: process.cwd(),
                             readonlyWorkspace: true
@@ -124,7 +123,7 @@ export class PortableSkillLoader {
                             return { success: false, error: result.stderr.trim() || 'Command failed' };
                         }
                     } catch (error) {
-                        return { success: false, error: error instanceof Error ? error.message : String(error) };
+                        return { success: false, error: getErrorMessage(error) };
                     }
                 }
             };

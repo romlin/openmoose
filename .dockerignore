@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.git
+.github
+.moose/memory
+.moose/data/browser-profiles
+.moose/data/browser-previews
+models
+*.log
+.env
+pnpm-lock.yaml

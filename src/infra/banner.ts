@@ -38,17 +38,17 @@ export function printBanner(subtitle?: string): void {
     const bar = '─'.repeat(BOX_WIDTH);
 
     console.log('');
-    console.log(chalk.cyan(`  ╭${bar}╮`));
-    console.log(chalk.cyan('  │') + chalk.bold.white(center(title)) + chalk.cyan('│'));
+    console.log(chalk.cyan(`╭${bar}╮`));
+    console.log(chalk.cyan('│') + chalk.bold.white(center(title)) + chalk.cyan('│'));
     if (subtitle) {
-        console.log(chalk.cyan('  │') + chalk.dim(center(subtitle)) + chalk.cyan('│'));
+        console.log(chalk.cyan('│') + chalk.dim(center(subtitle)) + chalk.cyan('│'));
     }
-    console.log(chalk.cyan('  │') + chalk.dim(center(version)) + chalk.cyan('│'));
-    console.log(chalk.cyan(`  ╰${bar}╯`));
+    console.log(chalk.cyan('│') + chalk.dim(center(version)) + chalk.cyan('│'));
+    console.log(chalk.cyan(`╰${bar}╯`));
     console.log('');
 }
 
-/** Print a service status line (e.g. "  ✓ Brain         ollama · model"). */
+/** Print a service status line (e.g. "  ✓ Brain         node-llama-cpp · model"). */
 export function printStatus(label: string, detail: string): void {
     console.log(`  ${chalk.green('✓')} ${chalk.bold(label.padEnd(14))}${chalk.dim(detail)}`);
 }
