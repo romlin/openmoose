@@ -228,6 +228,16 @@ describe('browserActionSkill', () => {
             expect(parsed.data.timeout).toBe(30000);
         }
 
+        // LLMs sometimes send "30s" meaning 30 seconds
+        const parsedSec = browserActionSkill.argsSchema.safeParse({
+            url: 'https://example.com',
+            timeout: '30s',
+        });
+        expect(parsedSec.success).toBe(true);
+        if (parsedSec.success) {
+            expect(parsedSec.data.timeout).toBe(30000);
+        }
+
         const parsed2 = browserActionSkill.argsSchema.safeParse({
             action: 'click',
             element: '3',

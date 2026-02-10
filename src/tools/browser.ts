@@ -17,10 +17,23 @@ import { config } from '../config/index.js';
 /** Supported browser action types. */
 const ACTION_TYPES = ['navigate', 'click', 'type', 'wait', 'press', 'screenshot'] as const;
 
-/** Number that also accepts string input (LLMs often stringify numbers). Rejects NaN. */
+/** Number that also accepts string input (LLMs often stringify numbers). */
 const laxNumber = z.union([
     z.number(),
-    z.string().transform(Number).refine(v => !Number.isNaN(v), { message: 'Expected a numeric string' }),
+    z.string()
+        .transform(s => parseFloat(s))
+        .refine(v => !Number.isNaN(v), { message: 'Expected a numeric value' }),
+]);
+
+/** Like laxNumber but converts time-unit suffixes ("30s" → 30000, "5000ms" → 5000). */
+const laxMs = z.union([
+    z.number(),
+    z.string().transform(s => {
+        const n = parseFloat(s);
+        if (Number.isNaN(n)) return NaN;
+        if (/s$/i.test(s) && !/ms$/i.test(s)) return n * 1000; // "30s" → 30000
+        return n; // "5000", "5000ms", plain number strings
+    }).refine(v => !Number.isNaN(v), { message: 'Expected a numeric value' }),
 ]);
 
 /** Schema for a single action entry. */
@@ -42,7 +55,7 @@ const BrowserActionSchema = ActionEntrySchema.extend({
     actions: z.array(ActionEntrySchema).optional()
         .describe('List of actions to perform.'),
     _raw: z.string().optional(),
-    timeout: laxNumber.optional().transform(v => v ?? config.sandbox.defaultTimeoutMs),
+    timeout: laxMs.optional().transform(v => v ?? config.sandbox.defaultTimeoutMs),
 });
 
 /**
