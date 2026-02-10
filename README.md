@@ -24,7 +24,7 @@ Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp.
 - **Secure Sandbox** -- All code execution happens inside non-privileged, read-only Docker containers with dropped capabilities and resource limits.
 - **WhatsApp Integration** -- Chat with your assistant through WhatsApp. Responds to DMs automatically and to group messages prefixed with "moose".
 - **Voice Output** -- Text-to-speech via Supertonic 2 ONNX models (167x faster than real-time, 10 voice styles, 5 languages).
-- **Extensible Skills** -- Add capabilities with simple YAML files. No code required for common patterns.
+- **Extensible Skills** -- Add capabilities with simple YAML files. [**Read the Skills Guide**](docs/SKILLS_GUIDE.md).
 - **Task Scheduling** -- Schedule recurring tasks with cron expressions, intervals, or one-time execution.
 - **Multi-step Reasoning** -- Complex queries are automatically decomposed into atomic actions and executed sequentially with context accumulation.
 
@@ -143,7 +143,7 @@ LOG_SILENT=false                # Suppress all output
 
 ## Custom Skills
 
-Add capabilities by creating YAML files in the `skills/` directory. Skills are automatically loaded on gateway startup and registered with the semantic router.
+Add capabilities by creating YAML files in the `skills/` directory. Skills are automatically loaded on gateway startup and registered with the semantic router. For a complete walkthrough on building your own, see the [**Custom Skills Guide**](docs/SKILLS_GUIDE.md).
 
 ### Example: Weather Skill
 
