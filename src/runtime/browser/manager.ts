@@ -109,7 +109,7 @@ export class BrowserManager {
     /** Check if the daemon is reachable and healthy. */
     private static async isHealthy(): Promise<boolean> {
         try {
-            const res = await fetch(BROWSER_DAEMON_HEALTH_URL);
+            const res = await fetch(BROWSER_DAEMON_HEALTH_URL, { signal: AbortSignal.timeout(3_000) });
             return res.ok;
         } catch {
             return false;
