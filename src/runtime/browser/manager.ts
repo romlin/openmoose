@@ -50,7 +50,7 @@ export class BrowserManager {
         const tag = await this.ensureImageBuilt();
 
         const profileDir = config.sandbox.profileDir;
-        const previewsDir = path.join(process.cwd(), '.moose/data', 'browser-previews');
+        const previewsDir = config.sandbox.previewsDir;
         fs.mkdirSync(profileDir, { recursive: true });
         fs.mkdirSync(previewsDir, { recursive: true });
 

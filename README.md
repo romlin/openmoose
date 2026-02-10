@@ -73,6 +73,17 @@ pnpm dev talk
 pnpm dev chat "hello" --voice
 ```
 
+### 4. Run with Docker Compose (Alternative)
+
+If you prefer to run the gateway in a containerized environment:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+The gateway will be accessible at `http://localhost:18789`. Your models and vector data are persisted in `./models` and `./.moose`.
+
 ## Usage
 
 ### CLI Commands
@@ -146,10 +157,11 @@ examples:
 args:
   city:
     patterns:
-      - "(?:weather|forecast)\\s+(?:in|for|at)\\s+(.+)"
-      - "(.+?)\\s+(?:weather|forecast)"
+      - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
     fallback: Stockholm
-command: "curl -s 'wttr.in/{{city|u}}?format=3'"
+command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\""
 host: true
 ```
 
@@ -162,7 +174,7 @@ host: true
 | `examples` | Yes | Phrases that trigger this skill (used for semantic matching) |
 | `args` | No | Named arguments extracted via regex patterns |
 | `command` | Yes | Shell command with `{{arg}}` placeholders |
-| `host` | No | Run on host (`true`) or in Docker sandbox (`false`, default) |
+| `host` | No | Run on host (`true`) or in Docker sandbox (`false`, default). Host mode requires dependencies (like `python3` or `curl`) to be installed on the local system. |
 | `image` | No | Custom Docker image for sandboxed execution |
 
 ### Placeholders
@@ -190,34 +202,29 @@ The LLM has access to these tools for complex tasks:
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────┐
-│                    Gateway                        │
-│  HTTP (/health) + WebSocket (agent.run, etc.)     │
-├──────────────────────────────────────────────────┤
-│                                                   │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │  Brain   │  │  Memory  │  │ Semantic Router │  │
-│  │ node-    │  │ LanceDB  │  │  Embedding-     │  │
-│  │ llama-cpp│  │ + Trans- │  │  based matching │  │
-│  │ /Mistral │  │ formers  │  │                 │  │
-│  └─────────┘  └──────────┘  └─────────────────┘  │
-│                                                   │
-│  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │ Sandbox │  │  Audio   │  │    WhatsApp     │  │
-│  │ Docker  │  │ Supertonic│  │    Baileys      │  │
-│  └─────────┘  └──────────┘  └─────────────────┘  │
-│                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │              Agent Runner                    │  │
-│  │  Deconstruct → Route → Execute → Capture    │  │
-│  └─────────────────────────────────────────────┘  │
-│                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │          Skill Registry + Scheduler          │  │
-│  │  Built-in tools + YAML skills + Cron tasks   │  │
-│  └─────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    INPUT[CLI / WhatsApp / HTTP] --> GW[Gateway]
+    GW --> ROUTER{Semantic Router}
+
+    ROUTER -->|direct match| SKILLS[Skill Registry]
+    ROUTER -->|complex query| RUNNER[Agent Runner]
+
+    RUNNER -->|thinks| BRAIN[Brain]
+    RUNNER -->|recalls| MEM[Memory]
+    RUNNER -->|acts| SKILLS
+    RUNNER -->|speaks| TTS[Voice]
+
+    SKILLS -->|sandboxed| SBX[Docker Container]
+    SKILLS -->|trusted| HOST[Host Machine]
+
+    classDef hub fill:#2563eb,stroke:#1d4ed8,color:#fff
+    classDef decision fill:#f59e0b,stroke:#d97706,color:#000
+    classDef node fill:#dbeafe,stroke:#2563eb,color:#1e40af
+
+    class GW,RUNNER hub
+    class ROUTER decision
+    class INPUT,BRAIN,MEM,SKILLS,TTS,SBX,HOST node
 ```
 
 ### Project Structure

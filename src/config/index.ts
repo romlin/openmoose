@@ -10,6 +10,8 @@ dotenv.config();
 export const config = {
     gateway: {
         port: parseInt(process.env.GATEWAY_PORT || '18789', 10),
+        maxHistoryLength: 20,
+        portKillDelayMs: 500,
     },
 
     brain: {
@@ -24,6 +26,28 @@ export const config = {
         }
     },
 
+    router: {
+        /** Minimum confidence for considering a skill match. */
+        routeThreshold: 0.5,
+        /** Minimum confidence for actually executing a skill. */
+        executeThreshold: 0.68,
+    },
+
+    runner: {
+        maxToolIterations: 10,
+        autoCaptureTriggers: ['remember', 'my name is', 'i like', 'favorite'],
+    },
+
+    scheduler: {
+        pollIntervalMs: 60_000,
+    },
+
+    skills: {
+        /** Execution timeout for portable YAML skills (ms). */
+        timeoutMs: 15_000,
+        customDir: path.join(process.cwd(), 'src/tools/custom'),
+    },
+
     audio: {
         modelDir: path.join(process.cwd(), 'models/supertonic/onnx'),
         voiceStyle: path.join(process.cwd(), 'models/supertonic/voice_styles/M1.json'),
@@ -36,19 +60,22 @@ export const config = {
         dbPath: process.env.MEMORY_DB_PATH || '.moose/memory',
     },
 
-    skills: {
-        customDir: path.join(process.cwd(), 'src/tools/custom'),
-    },
-
     whatsapp: {
         authDir: path.join(process.cwd(), '.moose/data', 'whatsapp-auth'),
         contactsPath: path.join(process.cwd(), '.moose/data', 'contacts.json'),
+        reconnectDelayMs: 5_000,
     },
+
     sandbox: {
         profileDir: process.env.BROWSER_PROFILE_DIR || path.join(process.cwd(), '.moose/data', 'browser-profiles'),
+        previewsDir: path.join(process.cwd(), '.moose/data', 'browser-previews'),
         defaultImage: 'python:3.12-slim',
         playwrightImage: 'mcr.microsoft.com/playwright:v1.58.0-noble',
+        defaultTimeoutMs: 30_000,
+        defaultMemory: '512m',
+        defaultCpus: 1.0,
     },
+
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         silent: process.env.LOG_SILENT === 'true',

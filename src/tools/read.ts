@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { defineSkill } from '../runtime/skill.js';
 import { readFile } from 'node:fs/promises';
 import { assertSafePath } from '../infra/safe-path.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /**
  * Read skill - allows agent to read file contents (for SKILL.md files, etc.)
@@ -21,7 +22,7 @@ export const readSkill = defineSkill({
         } catch (error) {
             return {
                 success: false,
-                error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}`
+                error: `Failed to read file: ${getErrorMessage(error)}`
             };
         }
     }

@@ -41,26 +41,26 @@ program
                 const resp = JSON.parse(data.toString()) as WaSendResult;
                 if (resp.type === 'whatsapp.send.result') {
                     if (resp.success) {
-                        console.log(`${resp.message}`);
+                        console.log(`  ${resp.message}`);
                         process.exit(0);
                     } else {
-                        console.error(`Error: ${resp.error}`);
+                        console.error(`  Error: ${resp.error}`);
                         process.exit(1);
                     }
                 }
             } catch {
-                console.error('Failed to parse gateway response');
+                console.error('  Failed to parse gateway response');
                 process.exit(1);
             }
         });
 
         ws.on('error', () => {
-            console.error('Failed to connect to Gateway. Is it running?');
+            console.error('  Failed to connect to Gateway. Is it running?');
             process.exit(1);
         });
 
         setTimeout(() => {
-            console.error('Timeout waiting for Gateway response');
+            console.error('  Timeout waiting for Gateway response');
             process.exit(1);
         }, GATEWAY_RESPONSE_TIMEOUT_MS);
     });

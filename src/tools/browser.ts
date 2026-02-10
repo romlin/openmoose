@@ -9,14 +9,13 @@
 
 import { z } from 'zod';
 import { defineSkill } from '../runtime/skill.js';
+import { getErrorMessage } from '../infra/errors.js';
 import { BrowserManager } from '../runtime/browser/manager.js';
 import { BROWSER_DAEMON_EXECUTE_URL } from '../runtime/browser/constants.js';
+import { config } from '../config/index.js';
 
 /** Supported browser action types. */
 const ACTION_TYPES = ['navigate', 'click', 'type', 'wait', 'press', 'screenshot'] as const;
-
-/** Default timeout for browser actions (ms). */
-const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Number that also accepts string input (LLMs often stringify numbers). Rejects NaN. */
 const laxNumber = z.union([
@@ -43,7 +42,7 @@ const BrowserActionSchema = ActionEntrySchema.extend({
     actions: z.array(ActionEntrySchema).optional()
         .describe('List of actions to perform.'),
     _raw: z.string().optional(),
-    timeout: laxNumber.optional().default(DEFAULT_TIMEOUT_MS),
+    timeout: laxNumber.optional().default(config.sandbox.defaultTimeoutMs),
 });
 
 /**
@@ -119,7 +118,7 @@ export const browserActionSkill = defineSkill({
             if (error instanceof Error && error.name === 'AbortError') {
                 return { success: false, error: 'Browser action timed out.' };
             }
-            return { success: false, error: error instanceof Error ? error.message : String(error) };
+            return { success: false, error: getErrorMessage(error) };
         }
     },
 });

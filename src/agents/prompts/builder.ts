@@ -10,7 +10,7 @@ export class PromptBuilder {
     /**
      * Build the final system prompt with all available context
      */
-    build(_skillsPrompt?: string, memoryContext?: string): string {
+    build(skillsPrompt?: string, memoryContext?: string): string {
         const toolsDef = this.registry.getPromptDefinitions();
 
         const now = new Date();
@@ -24,6 +24,7 @@ export class PromptBuilder {
             hour12: false
         })}\n`;
 
+        const skillsSection = skillsPrompt ? `\n\n## CHARACTER & SKILLS\n${skillsPrompt}\n` : '';
         const memorySection = memoryContext ? `\n\n## Memory\nFacts about the user (PRIORITIZE THESE):\n${memoryContext}\n` : '';
 
         return `You are OpenMoose (also called "Moose"), a friendly personal assistant.
@@ -35,13 +36,14 @@ When the user tells you something about themselves, remember it is about THEM, n
 - When given skill results (weather, time, etc.), incorporate them naturally into your response
 - For complex tasks, use your tools when available
 - When asked about the user, always use "your" (e.g. "Your name is ...")
-
+${skillsSection}
 ## TOOLS
 ${toolsDef}
 
 ## BROWSER TASKS
 For web-based tasks (WhatsApp, Web Browsing), use the \`browser_action\` tool:
 - Use \`type\` or \`action\` to specify the command (navigate, click, type, wait, press)
+- Use the \`element\` field with the numeric index from the snapshot for clicking/typing
 - Every action returns a text-based "Snapshot" of the page
 - A screenshot is saved to \`.moose/data/browser-previews/latest.png\`
 

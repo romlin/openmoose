@@ -7,12 +7,7 @@
 import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
 import { EmbeddingProvider } from '../infra/embeddings.js';
-
-/** Minimum confidence for routing a message to a skill. */
-const ROUTE_THRESHOLD = 0.5;
-
-/** Minimum confidence for actually executing the skill. */
-const EXECUTE_THRESHOLD = 0.68;
+import { config } from '../config/index.js';
 
 /**
  * Skill definition with example phrases for semantic matching
@@ -119,11 +114,11 @@ export class SemanticRouter {
     }
 
     async tryExecute(message: string, originalMessage?: string, context?: string, skillContext?: SkillContext): Promise<{ handled: boolean; success?: boolean; result?: string; confidence?: number; bestSkill?: string }> {
-        const match = await this.route(message, ROUTE_THRESHOLD);
+        const match = await this.route(message, config.router.routeThreshold);
 
-        if (!match || match.confidence < EXECUTE_THRESHOLD) {
+        if (!match || match.confidence < config.router.executeThreshold) {
             if (match) {
-                logger.debug(`Match found for "${match.skill.name}" but confidence (${(match.confidence * 100).toFixed(1)}%) is below threshold (${(EXECUTE_THRESHOLD * 100).toFixed(1)}%)`, 'Router');
+                logger.debug(`Match found for "${match.skill.name}" but confidence (${(match.confidence * 100).toFixed(1)}%) is below threshold (${(config.router.executeThreshold * 100).toFixed(1)}%)`, 'Router');
             } else {
                 logger.debug(`No skill match found for "${message}"`, 'Router');
             }

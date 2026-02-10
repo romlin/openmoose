@@ -23,21 +23,21 @@ export enum LogLevel {
 export const logger = {
     info: (message: string, prefix: string = 'Gateway') => {
         if (config.logging.silent) return;
-        console.log(`${chalk.dim(`[${prefix}]`)} ${message}`);
+        console.log(`  ${chalk.yellow('○')} ${chalk.dim(`[${prefix}]`)} ${message}`);
     },
 
     success: (message: string, prefix: string = 'Gateway') => {
         if (config.logging.silent) return;
-        console.log(`${chalk.green(`[${prefix}]`)} ${chalk.bold(message)}`);
+        console.log(`  ${chalk.green('✓')} ${chalk.green(`[${prefix}]`)} ${chalk.bold(message)}`);
     },
 
     warn: (message: string, prefix: string = 'Gateway') => {
         if (config.logging.silent) return;
-        console.warn(`${chalk.yellow(`[${prefix}]`)} ${chalk.yellow(message)}`);
+        console.warn(`  ${chalk.yellow('!')} ${chalk.yellow(`[${prefix}]`)} ${chalk.yellow(message)}`);
     },
 
     error: (message: string, prefix: string = 'Gateway', error?: unknown) => {
-        console.error(`${chalk.red(`[${prefix}]`)} ${chalk.red.bold(message)}`);
+        console.error(`  ${chalk.red('✗')} ${chalk.red(`[${prefix}]`)} ${chalk.red.bold(message)}`);
         if (error) {
             const errObj = error as { stack?: string };
             console.error(chalk.red(errObj.stack || String(error)));
@@ -46,11 +46,11 @@ export const logger = {
 
     debug: (message: string, prefix: string = 'Debug') => {
         if (config.logging.silent || config.logging.level !== 'debug') return;
-        console.log(`${chalk.magenta(`[${prefix}]`)} ${chalk.gray(message)}`);
+        console.log(`  ${chalk.magenta('•')} ${chalk.magenta(`[${prefix}]`)} ${chalk.gray(message)}`);
     },
 
     important: (message: string, prefix: string = 'System') => {
         if (config.logging.silent) return;
-        console.log(`${chalk.bold.cyan(`[${prefix}]`)} ${chalk.bold(message)}`);
+        console.log(`  ${chalk.bold.cyan('★')} ${chalk.bold.cyan(`[${prefix}]`)} ${chalk.bold(message)}`);
     }
 };

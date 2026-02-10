@@ -38,13 +38,13 @@ export function printBanner(subtitle?: string): void {
     const bar = '─'.repeat(BOX_WIDTH);
 
     console.log('');
-    console.log(chalk.cyan(`  ╭${bar}╮`));
-    console.log(chalk.cyan('  │') + chalk.bold.white(center(title)) + chalk.cyan('│'));
+    console.log(chalk.cyan(`╭${bar}╮`));
+    console.log(chalk.cyan('│') + chalk.bold.white(center(title)) + chalk.cyan('│'));
     if (subtitle) {
-        console.log(chalk.cyan('  │') + chalk.dim(center(subtitle)) + chalk.cyan('│'));
+        console.log(chalk.cyan('│') + chalk.dim(center(subtitle)) + chalk.cyan('│'));
     }
-    console.log(chalk.cyan('  │') + chalk.dim(center(version)) + chalk.cyan('│'));
-    console.log(chalk.cyan(`  ╰${bar}╯`));
+    console.log(chalk.cyan('│') + chalk.dim(center(version)) + chalk.cyan('│'));
+    console.log(chalk.cyan(`╰${bar}╯`));
     console.log('');
 }
 

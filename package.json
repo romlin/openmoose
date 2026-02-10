@@ -26,7 +26,6 @@
     "voice"
   ],
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "gateway": "tsx src/gateway/server.ts",
@@ -34,7 +33,8 @@
     "build": "tsc && cp src/runtime/browser/daemon.js src/runtime/browser/Dockerfile dist/runtime/browser/",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "test": "vitest"
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@hapi/boom": "10.0.1",
@@ -66,6 +66,7 @@
     "@types/ws": "8.18.1",
     "@typescript-eslint/eslint-plugin": "8.54.0",
     "@typescript-eslint/parser": "8.54.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "9.39.2",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
@@ -74,7 +75,8 @@
   },
   "pnpm": {
     "overrides": {
-      "onnxruntime-node": "1.24.1"
+      "onnxruntime-node": "1.24.1",
+      "tar": ">=7.5.7"
     }
   }
 }

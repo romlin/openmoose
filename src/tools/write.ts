@@ -3,6 +3,7 @@ import { defineSkill } from '../runtime/skill.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { assertSafePath } from '../infra/safe-path.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /**
  * Write skill - allows agent to create or overwrite files
@@ -27,7 +28,7 @@ export const writeSkill = defineSkill({
         } catch (error) {
             return {
                 success: false,
-                error: `Failed to write file: ${error instanceof Error ? error.message : String(error)}`
+                error: `Failed to write file: ${getErrorMessage(error)}`
             };
         }
     }

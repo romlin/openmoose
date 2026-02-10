@@ -54,6 +54,13 @@ describe('PromptBuilder', () => {
         expect(prompt).not.toContain('## Memory');
     });
 
+    it('includes character skills prompt when provided', () => {
+        const builder = createBuilder();
+        const prompt = builder.build('Be a pirate.');
+        expect(prompt).toContain('CHARACTER & SKILLS');
+        expect(prompt).toContain('Be a pirate.');
+    });
+
     it('includes browser task instructions', () => {
         const builder = createBuilder();
         const prompt = builder.build();

@@ -12,16 +12,11 @@ import { SkillContext } from './skill.js';
 import { TaskScheduler } from './scheduler.js';
 import { WhatsAppManager } from '../infra/whatsapp.js';
 import { SemanticRouter } from './semantic-router.js';
-import { builtInRoutes } from './skill-routes.js';
 import { PortableSkillLoader } from './portable-skills.js';
 import { logger } from '../infra/logger.js';
+import { getErrorMessage } from '../infra/errors.js';
+import { config } from '../config/index.js';
 import path from 'node:path';
-
-/** Maximum number of LLM tool-call iterations before halting. */
-const MAX_TOOL_ITERATIONS = 10;
-
-/** Keywords that trigger automatic fact capture. */
-const AUTO_CAPTURE_TRIGGERS = ['remember', 'my name is', 'i like', 'favorite'];
 
 /**
  * AgentRunner: Orchestrates the interaction between the Brain, Hands, and Memory.
@@ -42,10 +37,6 @@ export class AgentRunner {
     }
 
     async init() {
-        for (const route of builtInRoutes) {
-            this.router.register(route);
-        }
-
         const skillsDir = path.join(process.cwd(), 'skills');
         const portableSkills = await PortableSkillLoader.loadDirectory(skillsDir);
 
@@ -53,7 +44,7 @@ export class AgentRunner {
             this.router.register(route);
         }
 
-        logger.debug(`Initialized with ${builtInRoutes.length + portableSkills.length} skills`, 'Runner');
+        logger.debug(`Initialized with ${portableSkills.length} skills`, 'Runner');
     }
 
     /** Build a shared SkillContext from the runner's services. */
@@ -131,7 +122,7 @@ export class AgentRunner {
         let accumulatedResponse = '';
         let iterations = 0;
 
-        while (iterations < MAX_TOOL_ITERATIONS) {
+        while (iterations < config.runner.maxToolIterations) {
             const { fullResponse, toolCalls } = await this.streamAndCollect(
                 currentMessage, currentHistory, tools, formatter, options.onDelta
             );
@@ -201,7 +192,7 @@ export class AgentRunner {
 
             try {
                 args = JSON.parse(tc.function.arguments || '{}');
-            } catch {
+            } catch (err) {
                 const raw = tc.function.arguments?.trim() || '';
                 // LLMs sometimes concatenate multiple JSON objects ("{}{}").
                 // Try to split on `}{` boundaries and use the first valid object.
@@ -217,8 +208,11 @@ export class AgentRunner {
                     } catch { /* fall through to _raw */ }
                 }
                 if (!recovered) {
-                    logger.warn(`Failed to parse JSON args for ${name} (${typeof raw}, len=${raw.length}). Fallback to _raw.`, 'Runner');
-                    args = { _raw: raw };
+                    const errorMsg = `Invalid JSON arguments for ${name}: ${getErrorMessage(err)}`;
+                    logger.error(errorMsg, 'Runner');
+                    results.push({ tool: name, result: { success: false, error: errorMsg } });
+                    onToolResult?.({ name, success: false, error: errorMsg });
+                    continue;
                 }
             }
 
@@ -229,16 +223,16 @@ export class AgentRunner {
             try {
                 result = await this.registry.execute(name, args, context);
             } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : String(err);
-                logger.warn(`Tool ${name} threw: ${errorMessage}`, 'Runner');
-                result = { success: false, error: errorMessage };
+                const errorMessage = getErrorMessage(err);
+                logger.error(`Critical tool failure in ${name}: ${errorMessage}`, 'Runner');
+                result = { success: false, error: `Execution error: ${errorMessage}` };
             }
 
             if (result.success) {
                 logger.success(`Tool ${name} succeeded.`, 'Runner');
             } else {
                 const safeError = typeof result.error === 'string'
-                    ? result.error.slice(0, 120)
+                    ? result.error.slice(0, 200)
                     : 'unknown error';
                 logger.warn(`Tool ${name} failed: ${safeError}`, 'Runner');
             }
@@ -285,7 +279,7 @@ Return only a valid JSON array of strings. No conversational text.`;
     }
 
     private async autoCapture(message: string) {
-        if (AUTO_CAPTURE_TRIGGERS.some(t => message.toLowerCase().includes(t))) {
+        if (config.runner.autoCaptureTriggers.some(t => message.toLowerCase().includes(t))) {
             await this.memory.store(message);
             logger.success('Auto-captured fact to long-term memory.', 'Memory');
         }

@@ -8,17 +8,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { config } from '../config/index.js';
 
-/** Default execution timeout in milliseconds. */
-const DEFAULT_TIMEOUT_MS = 30_000;
-
-/** Default memory limit per container. */
-const DEFAULT_MEMORY = '512m';
-
-/** Default CPU quota per container. */
-const DEFAULT_CPUS = 1.0;
-
-/** Exit code returned when execution exceeds the timeout. */
-const TIMEOUT_EXIT_CODE = 124;
+// Constants moved to config
 
 /** Output from a sandboxed command execution. */
 export interface SandboxResult {
@@ -54,9 +44,9 @@ export class LocalSandbox {
   private async execute(command: string, options: SandboxOptions = {}): Promise<SandboxResult> {
     const {
       image = config.sandbox.defaultImage,
-      timeout = DEFAULT_TIMEOUT_MS,
-      memory = DEFAULT_MEMORY,
-      cpus = DEFAULT_CPUS,
+      timeout = config.sandbox.defaultTimeoutMs,
+      memory = config.sandbox.defaultMemory,
+      cpus = config.sandbox.defaultCpus,
       network,
       readonlyWorkspace = true,
     } = options;
@@ -110,7 +100,7 @@ export class LocalSandbox {
         resolve({
           stdout: stdout.trim(),
           stderr: (stderr + '\n[Security] Error: Timeout reached.').trim(),
-          exitCode: TIMEOUT_EXIT_CODE
+          exitCode: 124 // Timeout exit code
         });
       }, timeout);
 

@@ -7,6 +7,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../infra/logger.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /** Persisted definition of a scheduled task. */
 export interface ScheduledTask {
@@ -198,7 +199,7 @@ export class TaskScheduler {
             logger.success(`Task completed: ${task.name} (${duration}ms)`, 'Scheduler');
         } catch (err) {
             task.lastRun = new Date().toISOString();
-            task.lastResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
+            task.lastResult = `Error: ${getErrorMessage(err)}`;
             task.nextRun = this.calculateNextRun(task);
             logger.error(`Task failed: ${task.name}`, 'Scheduler', err);
         }
