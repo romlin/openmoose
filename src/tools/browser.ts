@@ -42,7 +42,7 @@ const BrowserActionSchema = ActionEntrySchema.extend({
     actions: z.array(ActionEntrySchema).optional()
         .describe('List of actions to perform.'),
     _raw: z.string().optional(),
-    timeout: laxNumber.optional().default(config.sandbox.defaultTimeoutMs),
+    timeout: laxNumber.optional().transform(v => v ?? config.sandbox.defaultTimeoutMs),
 });
 
 /**
