@@ -24,6 +24,10 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
 2. Restart the gateway (`pnpm gateway`).
 3. Ask: "play latest video by pewdiepie".
 
+> [!NOTE]
+> This example uses **host mode** and requires `yt-dlp` to be installed on your machine (`pip install yt-dlp` or via your package manager). 
+> The command uses `xdg-open` (Linux). For **macOS**, replace it with `open`. For **Windows**, use `start`.
+
 ## Skill Schema
 
 | Field | Required | Description |
