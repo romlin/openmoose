@@ -105,8 +105,12 @@ export class PortableSkillLoader {
                             const { promisify } = await import('node:util');
                             const execAsync = promisify(exec);
 
-                            const { stdout, stderr } = await execAsync(finalCommand);
-                            return { success: true, result: stdout.trim() || stderr.trim() || 'Success' };
+                            try {
+                                const { stdout, stderr } = await execAsync(finalCommand, { timeout: config.skills.timeoutMs });
+                                return { success: true, result: stdout.trim() || stderr.trim() || 'Success' };
+                            } catch (err) {
+                                return { success: false, error: `Host execution failed or timed out: ${getErrorMessage(err)}` };
+                            }
                         }
 
                         const sandboxToUse = skillContext?.sandbox;

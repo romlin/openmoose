@@ -18,7 +18,7 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
    command: "ID=$(yt-dlp --get-id \"ytsearch1:{{query}} latest\"); xdg-open \"https://www.youtube.com/watch?v=$ID\" &"
    ```
 2. Restart the gateway (`pnpm gateway`).
-3. Ask: "What's on hacker news?".
+3. Ask: "play latest video by pewdiepie".
 
 ## Skill Schema
 
