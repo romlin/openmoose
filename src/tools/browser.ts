@@ -140,7 +140,14 @@ export const browserActionSkill = defineSkill({
                     return { success: false, error: `Daemon error: ${res.statusText}` };
                 }
 
-                return await res.json();
+                const data = await res.json();
+                // Return only the text snapshot to the LLM -- the full daemon
+                // response includes nested objects (elements, preview path) that
+                // serialize as [object Object] when the LLM inlines them.
+                return {
+                    success: data.success,
+                    data: data.snapshot || data.error || 'No content returned',
+                };
             } finally {
                 clearTimeout(timer);
             }
