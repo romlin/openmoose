@@ -194,6 +194,22 @@ log_header "Installing dependencies..."
 pnpm install --silent
 log_ok "pnpm install"
 
+# ── 5. Embedding Model ──────────────────────────────────────────────────────
+
+echo ""
+log_header "Pre-downloading embedding model..."
+EMBED_MODEL="Xenova/all-MiniLM-L6-v2"
+
+if npx --yes tsx -e "
+  const { pipeline } = await import('@huggingface/transformers');
+  await pipeline('feature-extraction', '$EMBED_MODEL', { dtype: 'fp32' });
+  console.log('ok');
+" 2>/dev/null | grep -q "ok"; then
+  log_ok "$EMBED_MODEL"
+else
+  log_err "Embedding model download failed (gateway will retry on first run)"
+fi
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
