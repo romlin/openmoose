@@ -34,10 +34,10 @@ export class MooseClient {
     private static readonly ARG_SUMMARY_MAX = 60;
 
     /** Prompt string shown before user input. */
-    private static readonly PROMPT = '  ' + chalk.bold.green('you') + chalk.dim(' › ');
+    private static readonly PROMPT = chalk.bold.green('you') + chalk.dim(' › ');
 
     /** Prefix shown before assistant responses. */
-    private static readonly RESPONSE_PREFIX = '\n  ' + chalk.bold.cyan('moose') + chalk.dim(' › ');
+    private static readonly RESPONSE_PREFIX = '\n' + chalk.bold.cyan('moose') + chalk.dim(' › ');
 
     private port: string;
 
@@ -181,7 +181,7 @@ export class MooseClient {
                 this.responseStarted = false;
                 process.stdout.write('\n');
                 process.stdout.write(
-                    '  ' + chalk.bgYellow.black.bold(` ${toolName} `) +
+                    chalk.bgYellow.black.bold(` ${toolName} `) +
                     (summary ? ' ' + chalk.dim(summary) : '') +
                     '\n'
                 );
@@ -190,7 +190,7 @@ export class MooseClient {
 
             case 'agent.tool_result':
                 if (payload.success !== true && payload.error) {
-                    process.stdout.write(chalk.dim('  ↳ ') + chalk.red('failed: ' + payload.error) + '\n');
+                    process.stdout.write(chalk.dim('↳ ') + chalk.red('failed: ' + payload.error) + '\n');
                 }
                 break;
 
@@ -201,7 +201,7 @@ export class MooseClient {
                 break;
 
             case 'error':
-                console.error(chalk.red('\n  Error:'), payload.message);
+                console.error(chalk.red('\nerror ') + chalk.dim('› '), payload.message || '');
                 this.responseStarted = false;
                 this.rl?.prompt();
                 break;

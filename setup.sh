@@ -170,20 +170,21 @@ fi
 
 echo ""
 log_header "Setting up TTS Model..."
-if [ -d "models/supertonic" ]; then
-  log_ok "TTS model already present"
+if [ -d "models/supertonic" ] && [ -f "models/supertonic/onnx/duration_predictor.onnx" ] && [ "$(stat -c%s "models/supertonic/onnx/duration_predictor.onnx" 2>/dev/null || echo 0)" -gt 1000000 ]; then
+  log_ok "TTS model already present and verified"
 else
-  log_wait "Cloning Supertonic 2 TTS model..."
   if ! command -v git-lfs &>/dev/null; then
-    log_err "git-lfs required: brew install git-lfs (macOS) or apt install git-lfs (Linux)"
+    log_err "git-lfs required: apt install git-lfs (Linux) or brew install git-lfs (macOS)"
     log_wait "Skipping TTS setup."
   else
-    git lfs install --skip-smudge &>/dev/null
-    if git clone https://huggingface.co/Supertone/supertonic-2 models/supertonic &>/dev/null; then
-      log_ok "Supertonic 2"
+    log_wait "Downloading Supertonic 2 TTS model (Git LFS)..."
+    git lfs install &>/dev/null
+    if [ -d "models/supertonic" ]; then
+      cd models/supertonic && git lfs pull origin main && cd ../..
     else
-      log_err "TTS clone failed"
+      git clone https://huggingface.co/Supertone/supertonic-2 models/supertonic
     fi
+    log_ok "Supertonic 2"
   fi
 fi
 
