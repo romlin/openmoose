@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="openmoose.svg" width="200" alt="OpenMoose">
+  <img src="openmoose.svg" width="300" alt="OpenMoose">
 </p>
 
 # OpenMoose
