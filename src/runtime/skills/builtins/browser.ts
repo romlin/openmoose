@@ -113,7 +113,7 @@ function normalizeActions(args: z.infer<typeof BrowserActionSchema>): ActionEntr
  */
 export const browserActionSkill = defineSkill({
     name: 'browser_action',
-    description: 'Control the browser. Use element index from snapshot, or url/selector for direct access.',
+    description: 'Control the browser. Use element index from snapshot for navigation. Use LITERAL queries for searches (do not alter spelling/names).',
     isVerified: true,
     argsSchema: BrowserActionSchema,
     execute: async (args) => {
