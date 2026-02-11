@@ -14,7 +14,7 @@ const program = new Command();
 program
     .name('openmoose')
     .description('OpenMoose: The local-first AI assistant.')
-    .version('0.1.0');
+    .version(config.version);
 
 program
     .command('chat')

@@ -5,8 +5,16 @@
 
 import dotenv from 'dotenv';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 
 dotenv.config();
+
+const pkgPath = path.join(process.cwd(), 'package.json');
+let version = '0.0.0';
+try {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    version = pkg.version || '0.0.0';
+} catch { /* fallback to 0.0.0 */ }
 
 const VALID_PROVIDERS = ['mistral', 'node-llama-cpp'] as const;
 const VALID_GPU_VALUES = ['auto', 'metal', 'cuda', 'vulkan', 'false'] as const;
@@ -30,6 +38,7 @@ function validateGpu(raw: string | undefined): 'auto' | 'metal' | 'cuda' | 'vulk
 }
 
 export const config = {
+    version,
     gateway: {
         port: Number(process.env.GATEWAY_PORT || 18789),
         /** Timeout for graceful cleanup on shutdown before forcing exit. */

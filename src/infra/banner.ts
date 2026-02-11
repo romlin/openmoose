@@ -4,22 +4,11 @@
  */
 
 import chalk from 'chalk';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { config } from '../config/index.js';
 
 /** Box inner width for the banner frame. */
 const BOX_WIDTH = 42;
 
-/** Read version from package.json (sync, runs once at startup). */
-function getVersion(): string {
-    try {
-        const raw = readFileSync(join(process.cwd(), 'package.json'), 'utf-8');
-        const pkg = JSON.parse(raw) as { version?: string };
-        return pkg.version || '0.0.0';
-    } catch {
-        return '0.0.0';
-    }
-}
 
 /** Center a string within the box width. */
 function center(text: string): string {
@@ -33,7 +22,7 @@ function center(text: string): string {
  * @param subtitle Optional second line (e.g. "Talk Mode", "WhatsApp Setup")
  */
 export function printBanner(subtitle?: string): void {
-    const version = `v${getVersion()}`;
+    const version = `v${config.version}`;
     const title = 'O P E N M O O S E';
     const bar = '─'.repeat(BOX_WIDTH);
 
