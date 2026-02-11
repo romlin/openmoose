@@ -20,7 +20,7 @@ const SELECTOR_WAIT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_PATH = '/app/previews/latest.png';
 const ERROR_SCREENSHOT_PATH = '/app/previews/error.png';
 const MAX_ELEMENTS = 100;
-const MAX_CONTENT_LENGTH = 2_000;
+const MAX_CONTENT_LENGTH = 6_000;
 const ELEMENT_ATTR = 'data-eidx';
 const LABEL_CLASS = 'moose-label';
 const INTERACTIVE_SELECTOR = [
@@ -32,6 +32,22 @@ const INTERACTIVE_SELECTOR = [
 
 let browser, context, page;
 
+function resetBrowserState() {
+    browser = null; context = null; page = null;
+}
+
+/* ── URL tracking ─────────────────────────────────────── */
+
+const visitedUrls = [];
+const MAX_VISITED_URLS = 20;
+
+function trackUrl(url) {
+    if (url && url !== 'about:blank' && !visitedUrls.includes(url)) {
+        visitedUrls.push(url);
+        if (visitedUrls.length > MAX_VISITED_URLS) visitedUrls.shift();
+    }
+}
+
 /* ── Browser lifecycle ──────────────────────────────────── */
 
 async function ensureBrowser() {
@@ -40,7 +56,7 @@ async function ensureBrowser() {
     // Clean up after a crash / disconnect
     if (browser && !browser.isConnected()) {
         console.warn('[Daemon] Browser disconnected, relaunching...');
-        browser = null; context = null; page = null;
+        resetBrowserState();
     }
 
     if (!browser) {
@@ -51,7 +67,7 @@ async function ensureBrowser() {
         });
         browser.on('disconnected', () => {
             console.warn('[Daemon] Browser process exited unexpectedly');
-            browser = null; context = null; page = null;
+            resetBrowserState();
         });
     }
 
@@ -145,14 +161,54 @@ function formatElements(elements) {
     }).join('\n');
 }
 
-/** Extract brief visible text content from the page. */
+/** Extract visible text content from the page, stripping navigation chrome. */
 async function getPageContent(p) {
     try {
         return await p.evaluate(() => {
-            const root = document.querySelector('main, [role="main"], article') || document.body;
-            return root.innerText.replace(/\s+/g, ' ').trim();
+            const NOISE = 'nav, footer, aside, header, [role="navigation"], [role="banner"], [role="contentinfo"], script, style, noscript, .sidebar, .ad, .advertisement, .social-share, .comments';
+            const root = document.querySelector('article')
+                || document.querySelector('main, [role="main"]')
+                || document.body;
+            const clone = root.cloneNode(true);
+            clone.querySelectorAll(NOISE).forEach(el => el.remove());
+            return clone.textContent.replace(/\s+/g, ' ').trim();
         });
     } catch { return ''; }
+}
+
+/* ── Brave Search parser ──────────────────────────────── */
+
+/** Parse Brave Search results into structured objects. Returns null for non-search pages. */
+async function parseBraveResults(p) {
+    if (!p.url().includes('search.brave.com/search')) return null;
+    try {
+        return await p.evaluate(() => {
+            const results = [];
+            document.querySelectorAll('#results .snippet, [data-type="web"]').forEach(el => {
+                if (results.length >= 10) return;
+                const link = el.querySelector('a[href]:not([href*="brave.com"])');
+                if (!link || !link.href.startsWith('http')) return;
+                const title = (el.querySelector('.title, .snippet-title, h2, h3') || link).textContent?.trim() || '';
+                const desc = el.querySelector('.snippet-description, .snippet-content, p')?.textContent?.trim() || '';
+                if (title) results.push({ title, url: link.href, snippet: desc.slice(0, 300) });
+            });
+            return results.length > 0 ? results : null;
+        });
+    } catch { return null; }
+}
+
+/** Format structured search results for the LLM snapshot. */
+function formatSearchResults(results) {
+    return results.map((r, i) => {
+        let line = `[${i + 1}] "${r.title}"\n    URL: ${r.url}`;
+        if (r.snippet) line += `\n    ${r.snippet}`;
+        return line;
+    }).join('\n\n');
+}
+
+/** Format visited URLs for the LLM snapshot. */
+function formatVisitedUrls(urls) {
+    return urls.map(u => `- ${u}`).join('\n');
 }
 
 /* ── Action execution ───────────────────────────────────── */
@@ -263,14 +319,23 @@ async function handleExecute(req, res) {
         await removeLabels(page).catch(() => {});
 
         const title = await page.title().catch(() => '');
+        const currentUrl = page.url();
+        trackUrl(currentUrl);
+
+        // Structured search results for Brave, raw content otherwise
         const content = await getPageContent(page);
+        const searchResults = await parseBraveResults(page);
 
         // Build snapshot text
-        let snapshot = `Page: ${title}\nURL: ${page.url()}`;
+        let snapshot = `Page: ${title}\nURL: ${currentUrl}`;
+        if (searchResults) {
+            snapshot += `\n\nSearch Results:\n${formatSearchResults(searchResults)}`;
+        }
         if (content) snapshot += `\n\n${content.slice(0, MAX_CONTENT_LENGTH)}`;
         if (elements.length > 0) snapshot += `\n\nInteractive elements:\n${formatElements(elements)}`;
+        if (visitedUrls.length > 0) snapshot += `\n\nVisited URLs this session:\n${formatVisitedUrls(visitedUrls)}`;
 
-        json(res, 200, { success: true, url: page.url(), title, snapshot,
+        json(res, 200, { success: true, url: currentUrl, title, snapshot,
             preview: '.moose/data/browser-previews/latest.png' });
     } catch (err) {
         console.error('[Daemon] Execution error:', err);

@@ -23,7 +23,7 @@ import { setupWhatsAppBridge } from './whatsapp-bridge.js';
 import { printBanner, printStatus, printPending, printReady } from '../infra/banner.js';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { config } from '../config/index.js';
+import { config, getModelName } from '../config/index.js';
 import { BrowserManager } from '../runtime/browser/manager.js';
 import { getErrorMessage } from '../infra/errors.js';
 
@@ -229,8 +229,7 @@ export class LocalGateway {
 
     private async initSkills() {
         await this.skillRegistry.loadDefaults();
-        const customSkillsDir = new URL('../skills/custom', import.meta.url).pathname;
-        await this.skillRegistry.loadExtensions(customSkillsDir);
+        await this.skillRegistry.loadExtensions(config.skills.customDir);
 
         const skillsDir = path.join(process.cwd(), 'skills');
         const skillEntries = await loadSkillEntries(skillsDir);
@@ -261,9 +260,7 @@ export class LocalGateway {
     }
 
     private async initBrainAndRunner() {
-        const modelName = config.brain.provider === 'mistral'
-            ? config.brain.mistral.model
-            : path.basename(config.brain.llamaCpp.modelPath);
+        const modelName = getModelName();
 
         this.brain = new LocalBrain({ memory: this.memory, registry: this.skillRegistry, skillsPrompt: this.skillsPrompt });
         this.runner = new AgentRunner(this.brain, this.memory, this.sandbox, this.skillRegistry, this.scheduler, this.whatsapp);

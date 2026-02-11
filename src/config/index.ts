@@ -115,5 +115,12 @@ export const config = {
     }
 } as const;
 
+/** Helper to get a human-readable model name for display. */
+export function getModelName(): string {
+    return config.brain.provider === 'mistral'
+        ? config.brain.mistral.model
+        : path.basename(config.brain.llamaCpp.modelPath);
+}
+
 // Type export for use elsewhere
 export type Config = typeof config;

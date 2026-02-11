@@ -286,7 +286,10 @@ export class AgentRunner {
     }
 
     private async deconstructMessage(message: string): Promise<string[]> {
-        if (message.length < 20 && !message.includes(' and ') && !message.includes(' then ')) {
+        // Skip decomposition for queries without multi-intent markers
+        const hasMultiIntent = /\b(and|then|also|plus|additionally)\b/i.test(message)
+            && message.length >= 20;
+        if (!hasMultiIntent) {
             return [message];
         }
 
@@ -306,7 +309,7 @@ User Query: "${message}"
 Return only a valid JSON array of strings. No conversational text.`;
 
         try {
-            const response = await this.brain.chat(prompt, []);
+            const response = await this.brain.chat(prompt, [], undefined, { lightweight: true });
             const cleaned = response.content.replace(/```json|```/g, '').trim();
             const actions = JSON.parse(cleaned);
             if (Array.isArray(actions) && actions.length > 0) {

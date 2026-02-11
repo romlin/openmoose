@@ -71,13 +71,19 @@ export class LocalBrain {
     return messages;
   }
 
-  /** Chat with the model (non-streaming). */
+  /** Chat with the model (non-streaming).
+   *  Pass `lightweight: true` for internal utility calls (e.g. decomposition)
+   *  that don't need the full system prompt, memory recall, or tool definitions.
+   */
   async chat(
     message: string,
     history: { role: string; content: string }[] = [],
-    tools?: OpenAITool[]
+    tools?: OpenAITool[],
+    options?: { lightweight?: boolean }
   ): Promise<ChatResult> {
-    const messages = await this.prepareMessages(message, history);
+    const messages = options?.lightweight
+      ? [{ role: 'user' as const, content: message }]
+      : await this.prepareMessages(message, history);
     return this.provider.chat(messages, tools);
   }
 

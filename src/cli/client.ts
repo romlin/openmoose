@@ -7,10 +7,10 @@ import { WebSocket, RawData } from 'ws';
 import chalk from 'chalk';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 import { writeFileSync, unlinkSync } from 'node:fs';
-import { createInterface, Interface } from 'node:readline';
-import { config } from '../config/index.js';
+import { createInterface, Interface } from 'readline';
+import { config, getModelName } from '../config/index.js';
 import { printBanner, printStatus, printHint } from '../infra/banner.js';
 
 interface GatewayMessage {
@@ -92,12 +92,10 @@ export class MooseClient {
     }
 
     async startInteractive(voice = false) {
-        const model = config.brain.provider === 'mistral'
-            ? config.brain.mistral.model
-            : basename(config.brain.llamaCpp.modelPath);
+        const modelName = getModelName();
 
         printBanner('Talk Mode');
-        printStatus('Brain', `${config.brain.provider} · ${model}`);
+        printStatus('Brain', `${config.brain.provider} · ${modelName}`);
         printStatus('Voice', voice ? 'on' : 'off');
         console.log('');
         printHint('Type a message to start. Ctrl+C to exit.');
@@ -151,6 +149,11 @@ export class MooseClient {
         }
     }
 
+    private resetPrompt() {
+        this.responseStarted = false;
+        this.rl?.prompt();
+    }
+
     private handleMessage(data: RawData) {
         let payload: GatewayMessage;
         try {
@@ -181,7 +184,7 @@ export class MooseClient {
                 this.responseStarted = false;
                 process.stdout.write('\n');
                 process.stdout.write(
-                    chalk.bgYellow.black.bold(` ${toolName} `) +
+                    chalk.bgYellow.black.bold(`${toolName}`) +
                     (summary ? ' ' + chalk.dim(summary) : '') +
                     '\n'
                 );
@@ -196,14 +199,12 @@ export class MooseClient {
 
             case 'agent.final':
                 process.stdout.write('\n\n');
-                this.responseStarted = false;
-                this.rl?.prompt();
+                this.resetPrompt();
                 break;
 
             case 'error':
-                console.error(chalk.red('\nerror ') + chalk.dim('› '), payload.message || '');
-                this.responseStarted = false;
-                this.rl?.prompt();
+                process.stdout.write(chalk.red('\nerror') + chalk.dim(' › ') + (payload.message || '') + '\n');
+                this.resetPrompt();
                 break;
         }
     }
