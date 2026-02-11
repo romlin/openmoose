@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
+import { defineSkill } from '../../skill.js';
 
 const MemoryStoreSchema = z.object({
     fact: z.string().describe('The fact or information to remember')
@@ -13,13 +13,10 @@ const MemoryRecallSchema = z.object({
     query: z.string().describe('Search query to find relevant memories')
 });
 
-type MemoryStoreArgs = z.infer<typeof MemoryStoreSchema>;
-type MemoryRecallArgs = z.infer<typeof MemoryRecallSchema>;
-
-export const memoryStoreSkill = defineSkill<MemoryStoreArgs, { stored: boolean }>({
+export const memoryStoreSkill = defineSkill({
     name: 'memory_store',
     description: 'Stores a fact in long-term memory for future recall.',
-    isVerified: false,
+    isVerified: true,
     argsSchema: MemoryStoreSchema,
     execute: async (args, context) => {
         try {
@@ -31,10 +28,10 @@ export const memoryStoreSkill = defineSkill<MemoryStoreArgs, { stored: boolean }
     }
 });
 
-export const memoryRecallSkill = defineSkill<MemoryRecallArgs, { memories: string[] }>({
+export const memoryRecallSkill = defineSkill({
     name: 'memory_recall',
     description: 'Searches long-term memory for relevant information.',
-    isVerified: false,
+    isVerified: true,
     argsSchema: MemoryRecallSchema,
     execute: async (args, context) => {
         try {

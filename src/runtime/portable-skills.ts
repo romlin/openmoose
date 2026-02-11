@@ -11,6 +11,9 @@ import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
 import { getErrorMessage } from '../infra/errors.js';
 import { config } from '../config/index.js';
+import { getOpenCommand } from '../infra/opener.js';
+import { exec as execCb } from 'node:child_process';
+import { promisify } from 'node:util';
 
 interface PortableSkillDef {
     name: string;
@@ -100,14 +103,22 @@ export class PortableSkillLoader {
                     const finalCommand = PortableSkillLoader.interpolateCommand(def.command, args, context);
 
                     try {
-                        // Always use sandbox -- host execution is disabled for security
+                        if (def.host) {
+                            await PortableSkillLoader.validateHostDependencies(finalCommand);
+                            const execAsync = promisify(execCb);
+
+                            try {
+                                const { stdout, stderr } = await execAsync(finalCommand, { timeout: config.skills.timeoutMs });
+                                if (stderr) logger.debug(`Host command stderr: ${stderr.trim()}`, 'Security');
+                                return { success: true, result: stdout.trim() || 'Success' };
+                            } catch (err) {
+                                return { success: false, error: `Host execution failed or timed out: ${getErrorMessage(err)}` };
+                            }
+                        }
+
                         const sandboxToUse = skillContext?.sandbox;
                         if (!sandboxToUse) {
                             return { success: false, error: 'Sandbox not available in context' };
-                        }
-
-                        if (def.host) {
-                            logger.warn(`Skill "${def.name}" requested host execution -- running in sandbox instead for security.`, 'Skills');
                         }
 
                         const result = await sandboxToUse.run(finalCommand, {
@@ -140,6 +151,9 @@ export class PortableSkillLoader {
     static interpolateCommand(command: string, args: Record<string, string>, context?: string): string {
         let interpolated = command;
 
+        // 0. Inject {{open}} placeholder
+        interpolated = interpolated.replace(/{{open}}/g, getOpenCommand());
+
         // 1. Interpolate explicit args: {{city}} -> 'Stockholm' (shell-escaped)
         for (const [key, value] of Object.entries(args)) {
             const escaped = shellEscape(value);
@@ -163,5 +177,35 @@ export class PortableSkillLoader {
 
         // 4. Clean up any remaining placeholders
         return interpolated.replace(/{{[a-zA-Z0-9_]+}}/g, '');
+    }
+
+    /**
+     * Validates that critical host-mode dependencies referenced in a command exist.
+     */
+    private static async validateHostDependencies(command: string): Promise<void> {
+        const potentialDeps = ['yt-dlp', 'xdg-open', 'open', 'start', 'ffmpeg', 'curl', 'wget'];
+        const missing: string[] = [];
+        const execAsync = promisify(execCb);
+
+        // Tokenize command to avoid matching parts of words (e.g. 'open' in 'xdg-open')
+        const tokens = command.split(/[\s|&;]+/).map(t => t.trim().replace(/^['"]|['"]$/g, ''));
+
+        for (const dep of potentialDeps) {
+            // Skip 'start' checked via 'where' on Windows as it's a shell builtin
+            if (dep === 'start' && process.platform === 'win32') continue;
+
+            if (tokens.includes(dep)) {
+                try {
+                    const checkCmd = process.platform === 'win32' ? `where ${dep}` : `command -v ${dep}`;
+                    await execAsync(checkCmd);
+                } catch {
+                    missing.push(dep);
+                }
+            }
+        }
+
+        if (missing.length > 0) {
+            logger.warn(`Missing host dependencies for skill: ${missing.join(', ')}. Command might fail.`, 'Security');
+        }
     }
 }

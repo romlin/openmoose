@@ -8,11 +8,11 @@
  */
 
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
-import { getErrorMessage } from '../infra/errors.js';
-import { BrowserManager } from '../runtime/browser/manager.js';
-import { BROWSER_DAEMON_EXECUTE_URL } from '../runtime/browser/constants.js';
-import { config } from '../config/index.js';
+import { defineSkill } from '../../skill.js';
+import { getErrorMessage } from '../../../infra/errors.js';
+import { BrowserManager } from '../../browser/manager.js';
+import { BROWSER_DAEMON_EXECUTE_URL } from '../../browser/constants.js';
+import { config } from '../../../config/index.js';
 
 /** Supported browser action types. */
 const ACTION_TYPES = ['navigate', 'click', 'type', 'wait', 'press', 'screenshot'] as const;
@@ -114,7 +114,7 @@ function normalizeActions(args: z.infer<typeof BrowserActionSchema>): ActionEntr
 export const browserActionSkill = defineSkill({
     name: 'browser_action',
     description: 'Control the browser. Use element index from snapshot, or url/selector for direct access.',
-    isVerified: false,
+    isVerified: true,
     argsSchema: BrowserActionSchema,
     execute: async (args) => {
         try {

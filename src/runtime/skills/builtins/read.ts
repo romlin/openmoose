@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
+import { defineSkill } from '../../skill.js';
 import { readFile } from 'node:fs/promises';
-import { assertSafePath } from '../infra/safe-path.js';
-import { getErrorMessage } from '../infra/errors.js';
+import { assertSafePath } from '../../../infra/safe-path.js';
+import { getErrorMessage } from '../../../infra/errors.js';
 
 /**
  * Read skill - allows agent to read file contents (for SKILL.md files, etc.)
@@ -10,7 +10,7 @@ import { getErrorMessage } from '../infra/errors.js';
 export const readSkill = defineSkill({
     name: 'read',
     description: 'Read the contents of a file. Use this to read SKILL.md files when you need to learn how to use a skill.',
-    isVerified: false,
+    isVerified: true,
     argsSchema: z.object({
         path: z.string().describe('Path to the file to read (relative to project root)')
     }),

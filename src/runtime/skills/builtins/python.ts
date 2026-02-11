@@ -3,15 +3,13 @@
  */
 
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
+import { defineSkill } from '../../skill.js';
 
 const PythonArgsSchema = z.object({
     code: z.string().describe('Python 3.12 code to execute')
 });
 
-type PythonArgs = z.infer<typeof PythonArgsSchema>;
-
-export const pythonSkill = defineSkill<PythonArgs, { stdout: string; stderr: string }>({
+export const pythonSkill = defineSkill({
     name: 'python_execute',
     description: 'Runs Python 3.12 code in a secure Docker sandbox. Use for calculations, data processing, or any Python task.',
     isVerified: false,

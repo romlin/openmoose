@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
+import { defineSkill } from '../../skill.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { assertSafePath } from '../infra/safe-path.js';
-import { getErrorMessage } from '../infra/errors.js';
+import { assertSafePath } from '../../../infra/safe-path.js';
+import { getErrorMessage } from '../../../infra/errors.js';
 
 /**
  * Write skill - allows agent to create or overwrite files
@@ -11,7 +11,7 @@ import { getErrorMessage } from '../infra/errors.js';
 export const writeSkill = defineSkill({
     name: 'file_write',
     description: 'Create or overwrite a LOCAL file with text. Use this ONLY for saving files on the server disk. NEVER use this for messaging people or WhatsApp.',
-    isVerified: false,
+    isVerified: true,
     argsSchema: z.object({
         path: z.string().describe('Path to the file to write (relative to project root)'),
         content: z.string().describe('The content to write to the file')

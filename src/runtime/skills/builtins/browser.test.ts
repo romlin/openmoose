@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { browserActionSkill } from './browser.js';
 
-vi.mock('../runtime/browser/manager.js', () => ({
+vi.mock('../../browser/manager.js', () => ({
     BrowserManager: { ensureRunning: vi.fn().mockResolvedValue(undefined) },
 }));
 
@@ -19,7 +19,7 @@ describe('browserActionSkill', () => {
 
     it('has correct metadata', () => {
         expect(browserActionSkill.name).toBe('browser_action');
-        expect(browserActionSkill.isVerified).toBe(false);
+        expect(browserActionSkill.isVerified).toBe(true);
     });
 
     /* ── Actions array ────────────────────────────────────── */

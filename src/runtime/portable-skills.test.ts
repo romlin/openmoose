@@ -1,5 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { shellEscape, PortableSkillLoader } from './portable-skills.js';
+import { exec } from 'node:child_process';
+import fs from 'node:fs/promises';
+
+vi.mock('node:child_process', () => ({
+    exec: vi.fn()
+}));
+
+vi.mock('node:fs/promises');
+
+/** Sets up a promisify.custom mock on the mocked exec function. */
+function mockExecPromisify(impl: (...args: unknown[]) => Promise<unknown>) {
+    const mockExec = vi.mocked(exec);
+    (mockExec as unknown as Record<symbol | string, unknown>)[Symbol.for('nodejs.util.promisify.custom')] = impl;
+    return impl;
+}
+
+/** Creates a minimal host skill YAML definition. */
+function hostSkillYaml(name: string, command: string): string {
+    return `
+name: ${name}
+description: test
+examples: ["test"]
+host: true
+command: "${command}"
+`;
+}
 
 describe('shellEscape', () => {
     it('wraps a simple string in single quotes', () => {
@@ -106,5 +132,80 @@ describe('PortableSkillLoader.interpolateCommand', () => {
             'from context'
         );
         expect(result).toBe("echo 'from args'");
+    });
+
+    it('injects {{open}} placeholder', () => {
+        const result = PortableSkillLoader.interpolateCommand('{{open}} {{url}}', { url: 'http://google.com' });
+        // result should contain xdg-open (Linux), open (macOS) or start (Windows)
+        // Since we are running on Linux in this environment:
+        expect(result).toMatch(/(xdg-open|open|start) 'http:\/\/google.com'/);
+    });
+});
+
+describe('PortableSkillLoader.execute (host)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('executes commands on host when host: true', async () => {
+        const customPromisify = mockExecPromisify(
+            vi.fn().mockResolvedValue({ stdout: 'Success', stderr: '' })
+        );
+
+        vi.mocked(fs.readFile).mockResolvedValue(hostSkillYaml('test-host', 'echo {{val}}'));
+
+        const route = await PortableSkillLoader.loadFile('test.yaml');
+        expect(route).not.toBeNull();
+
+        const result = await route!.execute({ val: 'hello' }, undefined, undefined);
+        expect(result.success).toBe(true);
+        expect(result.result).toBe('Success');
+        expect(customPromisify).toHaveBeenCalledWith(expect.stringContaining("'hello'"), expect.any(Object));
+    });
+
+    it('handles host execution timeout', async () => {
+        const err = new Error('cmd timed out');
+        (err as unknown as Record<string, unknown>).code = 'ETIMEDOUT';
+        mockExecPromisify(vi.fn().mockRejectedValue(err));
+
+        vi.mocked(fs.readFile).mockResolvedValue(hostSkillYaml('test-timeout', 'sleep 10'));
+
+        const route = await PortableSkillLoader.loadFile('test.yaml');
+        const result = await route!.execute({}, undefined, undefined);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('timed out');
+    });
+
+    it('handles host execution failures', async () => {
+        mockExecPromisify(vi.fn().mockRejectedValue(new Error('command not found')));
+
+        vi.mocked(fs.readFile).mockResolvedValue(hostSkillYaml('test-fail', 'fakecommand'));
+
+        const route = await PortableSkillLoader.loadFile('test.yaml');
+        const result = await route!.execute({}, undefined, undefined);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('failed');
+    });
+
+    it('warns when host dependencies are missing', async () => {
+        mockExecPromisify(vi.fn().mockImplementation((cmd: string) => {
+            if (cmd.startsWith('command -v') || cmd.startsWith('where')) {
+                return Promise.reject(new Error('not found'));
+            }
+            return Promise.resolve({ stdout: 'Success', stderr: '' });
+        }));
+
+        const { logger } = await import('../infra/logger.js');
+        const warnSpy = vi.spyOn(logger, 'warn');
+
+        vi.mocked(fs.readFile).mockResolvedValue(hostSkillYaml('test-deps', 'yt-dlp --version'));
+
+        const route = await PortableSkillLoader.loadFile('test.yaml');
+        await route!.execute({}, undefined, undefined);
+
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('Missing host dependencies for skill: yt-dlp'),
+            'Security'
+        );
     });
 });

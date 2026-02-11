@@ -1,0 +1,29 @@
+name: youtube
+description: Play a specific YouTube video or search for the latest video by a creator
+examples:
+  - "play the latest video by a creator"
+  - "play latest video by a youtuber"
+  - "watch the latest youtube video from a channel"
+  - "watch latest video by a creator"
+  - "open the latest video from a youtuber"
+  - "play their latest video"
+  - "play latest from a channel"
+  - "watch a creator's last video"
+  - "play youtube video https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  - "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  - "play youtube link https://youtu.be/dQw4w9WgXcQ"
+  - "play a youtube video"
+  - "search and play youtube video"
+args:
+  id:
+    patterns:
+      - 'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)'
+  query:
+    patterns:
+      - "(?:play|watch|open) (?:the )?latest (?:youtube )?video (?:by|from) (.+)"
+      - "(?:play|watch|open) latest (?:from|by) (.+)"
+      - "(?:play|watch|open) (.+?)(?:'s)? (?:last|latest) video"
+      - "(?:play|watch|open) (.+) latest"
+host: true
+command: "ID_INPUT={{id}}; QUERY={{query}}; if [ -n \"$ID_INPUT\" ]; then {{open}} \"https://www.youtube.com/watch?v=$ID_INPUT\" > /dev/null 2>&1 & echo \"Opened YouTube video $ID_INPUT on host screen.\"; elif [ -n \"$QUERY\" ]; then CHANNEL_URL=$(yt-dlp --print uploader_url --playlist-end 1 \"ytsearch1:$QUERY\" 2>/dev/null); if [ -n \"$CHANNEL_URL\" ]; then ID=$(yt-dlp --get-id --flat-playlist --playlist-end 1 \"$CHANNEL_URL/videos\" 2>/dev/null); if [ -n \"$ID\" ]; then {{open}} \"https://www.youtube.com/watch?v=$ID\" > /dev/null 2>&1 & echo \"Found and playing the latest video by $QUERY on host screen.\"; else echo \"Could not find videos on the channel for: $QUERY\"; exit 1; fi; else echo \"Could not find a YouTube channel for: $QUERY\"; exit 1; fi; else echo \"No video link or creator name found in the request.\"; exit 1; fi"
+
