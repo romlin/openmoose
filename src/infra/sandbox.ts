@@ -127,18 +127,49 @@ export class LocalSandbox {
    * Generalized language runner using stdin to avoid shell escaping issues.
    */
   private async runLanguage(image: string, cmd: string, code: string, options: SandboxOptions = {}) {
+    const isPlaywright = image.includes('playwright');
+    const memory = options.memory || config.sandbox.defaultMemory;
+    const cpus = options.cpus || config.sandbox.defaultCpus;
+
     const args = [
       'run', '--rm', '--interactive',
       '--name', this.containerName,
       '--network', options.network || 'bridge',
-      '--memory', options.memory || config.sandbox.defaultMemory,
+      '--memory', memory,
+      '--cpus', String(cpus),
       '--read-only',
+      '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m',
+      '--user', '1000:1000',
       '--security-opt', 'no-new-privileges',
       '--pids-limit', '50',
       '--label', 'com.openmoose.app=true',
-      '--user', '1000:1000',
-      image, 'sh', '-c', `${cmd} -`
+      '--label', 'com.openmoose.version=1',
+      '--label', `com.openmoose.container_id=${this.containerName}`,
     ];
+
+    if (isPlaywright) {
+      args.push('--cap-add', 'SYS_ADMIN');
+      const profileDir = config.sandbox.profileDir;
+      args.push('-v', `${profileDir}:/root/.config/google-chrome:ro`);
+      args.push('-v', `${profileDir}:/root/.mozilla:ro`);
+    } else {
+      args.push(
+        '--cap-drop', 'NET_RAW',
+        '--cap-drop', 'MKNOD',
+        '--cap-drop', 'AUDIT_WRITE',
+        '--cap-drop', 'NET_BIND_SERVICE',
+        '--cap-drop', 'SYS_CHROOT',
+      );
+    }
+
+    if (options.workspacePath) {
+      const mode = options.readonlyWorkspace !== false ? ':ro' : '';
+      args.push('-v', `${options.workspacePath}:/workspace${mode}`);
+      args.push('--workdir', '/workspace');
+    }
+
+    args.push(image, 'sh', '-c', `${cmd} -`);
+    // ... rest of method ...
 
     return new Promise<SandboxResult>((resolve) => {
       // Titanium Elk Hardening: Use stdio: ['pipe', ...] to enable Stdin Piping.

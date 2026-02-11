@@ -8,6 +8,7 @@ import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
 import { EmbeddingProvider } from '../infra/embeddings.js';
 import { config } from '../config/index.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /**
  * Skill definition with example phrases for semantic matching
@@ -104,8 +105,20 @@ export class SemanticRouter {
             }
 
             // Hybrid boost: if the skill's regex patterns match, bump confidence
-            const args = route.extractArgs ? route.extractArgs(message) : {};
-            const hasExtractedArgs = Object.values(args).some(v => v && v.length > 0);
+            let args: Record<string, string> = {};
+            let hasExtractedArgs = false;
+
+            if (route.extractArgs) {
+                try {
+                    args = route.extractArgs(message);
+                    hasExtractedArgs = Object.values(args).some(v => v && v.length > 0);
+                } catch (err) {
+                    logger.debug(`Argument extraction failed for "${route.name}": ${getErrorMessage(err)}`, 'Router');
+                    args = {};
+                    hasExtractedArgs = false;
+                }
+            }
+
             if (hasExtractedArgs) {
                 maxSimilarity = Math.min(1.0, maxSimilarity + SemanticRouter.REGEX_BOOST);
                 logger.debug(`Regex boost for "${route.name}": +${(SemanticRouter.REGEX_BOOST * 100).toFixed(0)}% → ${(maxSimilarity * 100).toFixed(1)}%`, 'Router');

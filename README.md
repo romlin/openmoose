@@ -160,7 +160,7 @@ args:
     patterns:
       - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
-  - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
+      - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
     fallback: Stockholm
 command: "{{open}} \"https://wttr.in/{{city|u}}?format=3\""
 host: true
@@ -202,8 +202,7 @@ The LLM has access to these tools for complex tasks:
 | `file_write` | Create or overwrite files |
 | `browser_action` | Automate browsers via Playwright (navigation, interaction, and snapshots) |
 
-> [!IMPORTANT]
-> **Privacy Warning**: While OpenMoose runs LLMs locally, some skills (like `weather` or `youtube`) call external APIs or URLs. This can leak your IP address or query data to third parties. Audit your `.yaml` skills if you require 100% air-gapped isolation.
+> **Privacy Warning**: While OpenMoose runs LLMs locally, some skills (like `weather` or `YouTube`) call external APIs or URLs. This can leak your IP address or query data to third parties. Audit your `.yaml` skills if you require 100% air-gapped isolation.
 
 ## Architecture
 

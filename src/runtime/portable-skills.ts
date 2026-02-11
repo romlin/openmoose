@@ -184,13 +184,17 @@ export class PortableSkillLoader {
      */
     private static async validateHostDependencies(command: string): Promise<void> {
         const potentialDeps = ['yt-dlp', 'xdg-open', 'open', 'start', 'ffmpeg', 'curl', 'wget'];
-        const missing = [];
+        const missing: string[] = [];
         const execAsync = promisify(execCb);
 
+        // Tokenize command to avoid matching parts of words (e.g. 'open' in 'xdg-open')
+        const tokens = command.split(/[\s|&;]+/).map(t => t.trim().replace(/^['"]|['"]$/g, ''));
+
         for (const dep of potentialDeps) {
-            // Check if the dependency is mentioned as a standalone command in the string
-            const regex = new RegExp(`\\b${dep}\\b`);
-            if (regex.test(command)) {
+            // Skip 'start' checked via 'where' on Windows as it's a shell builtin
+            if (dep === 'start' && process.platform === 'win32') continue;
+
+            if (tokens.includes(dep)) {
                 try {
                     const checkCmd = process.platform === 'win32' ? `where ${dep}` : `command -v ${dep}`;
                     await execAsync(checkCmd);
