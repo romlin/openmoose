@@ -3,16 +3,14 @@
  */
 
 import { z } from 'zod';
-import { defineSkill } from '../runtime/skill.js';
-import { getErrorMessage } from '../infra/errors.js';
+import { defineSkill } from '../../skill.js';
+import { getErrorMessage } from '../../../infra/errors.js';
 
 const ShellArgsSchema = z.object({
     command: z.string().describe('Bash command to execute')
 });
 
-type ShellArgs = z.infer<typeof ShellArgsSchema>;
-
-export const shellSkill = defineSkill<ShellArgs, { stdout: string; stderr: string }>({
+export const shellSkill = defineSkill({
     name: 'shell_execute',
     description: 'Runs bash commands in a secure Docker sandbox. Use for file operations, system commands, or shell scripts.',
     isVerified: false,

@@ -25,6 +25,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { config } from '../config/index.js';
 import { BrowserManager } from '../runtime/browser/manager.js';
+import { getErrorMessage } from '../infra/errors.js';
 
 /** Zod schema for validating incoming WebSocket payloads. */
 const WsPayloadSchema = z.discriminatedUnion('type', [
@@ -227,7 +228,7 @@ export class LocalGateway {
     }
 
     private async initSkills() {
-        this.skillRegistry.loadDefaults();
+        await this.skillRegistry.loadDefaults();
         const customSkillsDir = new URL('../skills/custom', import.meta.url).pathname;
         await this.skillRegistry.loadExtensions(customSkillsDir);
 
@@ -286,15 +287,32 @@ export class LocalGateway {
     }
 
     private registerShutdownHooks() {
+        let isShuttingDown = false;
         const shutdown = async () => {
+            if (isShuttingDown) return;
+            isShuttingDown = true;
+
             logger.info('Shutting down Gateway...', 'Gateway');
-            await BrowserManager.stop().catch(err => {
-                logger.warn(`Error stopping browser: ${err.message}`, 'Gateway');
-            });
-            process.exit(0);
+
+            // Force exit after configured timeout if cleanup hangs
+            const forceTimeout = setTimeout(() => {
+                logger.warn(`Cleanup timed out after ${config.gateway.shutdownTimeoutMs}ms, forcing exit.`, 'Gateway');
+                process.exit(1);
+            }, config.gateway.shutdownTimeoutMs);
+
+            try {
+                await BrowserManager.cleanup();
+                logger.success('Cleanup complete.', 'Gateway');
+            } catch (err) {
+                logger.warn(`Error during cleanup: ${getErrorMessage(err)}`, 'Gateway');
+            } finally {
+                clearTimeout(forceTimeout);
+                process.exit(0);
+            }
         };
-        process.once('SIGINT', shutdown);
-        process.once('SIGTERM', shutdown);
+
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
     }
 
     /** Connect WhatsApp and set up the message bridge. */

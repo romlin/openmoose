@@ -21,7 +21,7 @@ Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp.
 - **Local Brain** -- Powered by an integrated local engine (`node-llama-cpp`, Ministral-8B Reasoning default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
 - **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via local embeddings (Transformers.js), bypassing the LLM entirely for zero-latency responses.
 - **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents using local embeddings.
-- **Secure Sandbox** -- All code execution happens inside non-privileged, read-only Docker containers with dropped capabilities and resource limits.
+- **Secure Sandbox** -- All code execution happens inside hardened Docker containers with stdin-piped execution (injection-immune), `no-new-privileges` kernel security, PID limits (fork-bomb protection), and a 5MB output cap.
 - **WhatsApp Integration** -- Chat with your assistant through WhatsApp. Responds to DMs automatically and to group messages prefixed with "moose".
 - **Voice Output** -- Text-to-speech via Supertonic 2 ONNX models (167x faster than real-time, 10 voice styles, 5 languages).
 - **Extensible Skills** -- Add capabilities with simple YAML files. [**Read the Skills Guide**](docs/SKILLS_GUIDE.md).
@@ -117,6 +117,7 @@ Copy `.env.example` to `.env` and customize:
 ```bash
 # Gateway
 GATEWAY_PORT=18789              # HTTP/WebSocket server port
+GATEWAY_SHUTDOWN_TIMEOUT_MS=10000 # Max time for graceful cleanup (ms)
 
 # LLM Provider ('node-llama-cpp' for local, 'mistral' for cloud)
 LLM_PROVIDER=node-llama-cpp
@@ -159,9 +160,9 @@ args:
     patterns:
       - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
-      - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
+  - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
     fallback: Stockholm
-command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\""
+command: "{{open}} \"https://wttr.in/{{city|u}}?format=3\""
 host: true
 ```
 
@@ -183,6 +184,7 @@ host: true
 |---|---|
 | `{{arg}}` | Direct substitution |
 | `{{arg\|u}}` | URL-encoded substitution |
+| `{{open}}` | OS-specific open command (`open`, `start`, or `xdg-open`) |
 | `{{context}}` | Result from a previous step |
 
 ## Built-in Tools
@@ -198,7 +200,10 @@ The LLM has access to these tools for complex tasks:
 | `read` | Read file contents from the filesystem |
 | `ls` | List directory contents |
 | `file_write` | Create or overwrite files |
-| `browser_action` | Automate browsers via Playwright (navigate, click, type, screenshot) |
+| `browser_action` | Automate browsers via Playwright (navigation, interaction, and snapshots) |
+
+> [!IMPORTANT]
+> **Privacy Warning**: While OpenMoose runs LLMs locally, some skills (like `weather` or `youtube`) call external APIs or URLs. This can leak your IP address or query data to third parties. Audit your `.yaml` skills if you require 100% air-gapped isolation.
 
 ## Architecture
 
@@ -215,8 +220,9 @@ graph TD
     RUNNER -->|acts| SKILLS
     RUNNER -->|speaks| TTS[Voice]
 
-    SKILLS -->|sandboxed| SBX[Docker Container]
-    SKILLS -->|trusted| HOST[Host Machine]
+    SKILLS -->|isolated| CAP[Capability Context]
+    CAP -->|sandboxed| SBX[Docker Container]
+    CAP -->|trusted| HOST[Host Machine]
 
     classDef hub fill:#2563eb,stroke:#1d4ed8,color:#fff
     classDef decision fill:#f59e0b,stroke:#d97706,color:#000
@@ -233,9 +239,9 @@ graph TD
 src/
 ├── gateway/        Central HTTP/WebSocket server
 ├── agents/         LLM brain and prompt construction
-├── runtime/        Skill registry, runner, semantic router, scheduler
+├── runtime/        Skill registry, runner, router, scheduler
+│   └── skills/     Dynamic plugins (builtins & custom)
 ├── infra/          Memory, sandbox, audio, WhatsApp, logging
-├── tools/          Built-in tool implementations
 ├── cli/            Command-line interface
 └── config/         Centralized configuration
 skills/             YAML-based portable skill definitions
@@ -248,11 +254,45 @@ docs/               Markdown documents indexed into memory
 All code execution is sandboxed with defense-in-depth:
 
 - **Read-only root filesystem** (`--read-only`)
-- **All capabilities dropped** (`--cap-drop ALL`)
+- **Stdin-Piped Execution** -- Code (Python/Node) is streamed via stdin, neutralizing shell-injection and `arg_max` limits.
+- **Kernel-Level Restrictions** -- `--security-opt=no-new-privileges` and `--pids-limit 50` prevent escalation and fork-bombing.
+- **Output Exhaustion Protection** -- Strict **5MB cap** on `stdout/stderr` prevents host OOM crashes.
+- **Dropped dangerous capabilities** (`NET_RAW`, `MKNOD`, `AUDIT_WRITE`, etc.)
 - **Non-root user** (`--user 1000:1000`)
 - **Resource limits** (memory, CPU, timeout)
-- **Network isolation** (bridge mode)
-- **Verified-only host access** -- Only explicitly flagged skills can run on the host
+- **Structural Integrity** -- Core skills are verified via a centralized `manifest.ts` enforcing filename/name parity.
+- **DevOps Transparency** -- Containers use versioned reverse-DNS labels (e.g., `com.openmoose.app=true`, `com.openmoose.version=1`).
+
+## Security Maturity Disclosure
+
+OpenMoose is a developer-first tool. For production-grade or multi-tenant deployments, please be aware of these architectural boundaries:
+
+- **Docker Socket Risk**: The gateway requires access to the Docker daemon. In standard configurations, this grants the Node.js process the same privileges as the `docker` group. For high-risk environments, we recommend running in **Rootless Docker** or **Podman**.
+- **Upstream SHA Pinning**: By default, we use semantic tags (e.g., `python:3.12-slim`). For immutable supply-chain security, we recommend pinning Docker images by SHA256 digest in your local `.env`.
+- **Tmpfs Capping**: All sandbox temporary storage is capped at **64MB** to prevent RAM exhaustion on the host machine.
+- **Taxonomy**: Whether you call it an **OpenMoose** or a **Titanium Elk**, the security primitives remain identical.
+
+## Transparency & FAQ
+
+**Why the Gateway?** 
+The Gateway is a central "brain" that allows multiple clients (WhatsApp, CLI, Web) to share the same local LLM context and memory. It is the core of the multi-device experience.
+
+**Can I run without the Gateway?**
+Yes. For pure local testing or "one-off" chats, you can use the standalone CLI:
+```bash
+pnpm dev chat "hello"
+```
+This bypasses the Gateway server and runs the logic directly in the process.
+
+**What about 3rd-party data?**
+OpenMoose does not phone home. However, if a skill command includes a URL (e.g., `wttr.in`), your machine will fetch that URL. Always check a skill's `command` field to see where it connects.
+
+## Known Limitations
+
+- **Semantic Drift**: The router uses vector similarity. Very rarely, a request for "fire the rockets" might trigger "get the thermostat" if the embeddings overlap in a weird way.
+- **Resource Heavy**: Browser automation via Playwright requires significant RAM (2GB+ per daemon).
+- **Cleanup Latency**: Container cleanup on shutdown can take up to 10 seconds. You can tune `GATEWAY_SHUTDOWN_TIMEOUT_MS` if your system is particularly slow.
+- **Docker Storage**: OpenMoose does not automatically prune old images. Run `docker image prune` occasionally to reclaim disk space.
 
 ## Scripts
 

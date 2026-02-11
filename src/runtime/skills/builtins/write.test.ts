@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../infra/safe-path.js', () => ({
+vi.mock('../../../infra/safe-path.js', () => ({
     assertSafePath: vi.fn((p: string) => `/project/${p}`),
 }));
 
@@ -15,7 +15,7 @@ vi.mock('node:fs/promises', () => ({
 
 import { writeSkill } from './write.js';
 import { writeFile, mkdir } from 'node:fs/promises';
-import { assertSafePath } from '../infra/safe-path.js';
+import { assertSafePath } from '../../../infra/safe-path.js';
 
 const mockedWriteFile = vi.mocked(writeFile);
 const mockedMkdir = vi.mocked(mkdir);
@@ -31,7 +31,7 @@ beforeEach(() => {
 describe('writeSkill', () => {
     it('has correct metadata', () => {
         expect(writeSkill.name).toBe('file_write');
-        expect(writeSkill.isVerified).toBe(false);
+        expect(writeSkill.isVerified).toBe(true);
     });
 
     it('writes a file successfully', async () => {

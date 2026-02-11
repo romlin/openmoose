@@ -21,11 +21,11 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
    host: true
    command: |
      if [ -n "{{id}}" ]; then
-       xdg-open "https://www.youtube.com/watch?v={{id}}" &
+       {{open}} "https://www.youtube.com/watch?v={{id}}" &
      else
        CH=$(yt-dlp --print uploader_url --playlist-end 1 "ytsearch1:{{query}}" 2>/dev/null)
        ID=$(yt-dlp --get-id --flat-playlist --playlist-end 1 "$CH/videos" 2>/dev/null)
-       xdg-open "https://www.youtube.com/watch?v=$ID" &
+       {{open}} "https://www.youtube.com/watch?v=$ID" &
      fi
    ```
 2. Restart the gateway (`pnpm gateway`).
@@ -73,13 +73,18 @@ In your `command`, you can use these arguments:
 | `{{text}}` | Alias for context. Automatically used if no specific args are extracted. |
 | `{{message}}` | Alias for context. Automatically used if no specific args are extracted. |
 | `{{arg|u}}` | URL-encoded version of any argument (e.g., `{{city|u}}`). |
+| `{{open}}` | OS-specific open command (`open`, `start`, or `xdg-open`). |
 
 ## Security & Sandbox
 
 > [!CAUTION]
-> By default, portable skills run inside a **hardened Docker sandbox**. However, if you set `host: true`, the command will run directly on your host machine. **Use this only for trusted skills** (e.g., controlling a local player or opening a browser).
+> By default, portable skills run inside a **structurally hardened Docker sandbox**. However, if you set `host: true`, the command will run directly on your host machine. **Use this only for trusted skills** (e.g., controlling a local player or opening a browser).
 
-- **Sandboxed (Default)**: Read-only view of your project, no host access, 30s timeout.
+- **Sandboxed (Default)**: 
+  - **Stdin-Piped**: Commands are streamed via stdin to neutralize shell injection.
+  - **Kernel-Hardened**: `no-new-privileges` and `pids-limit` prevent process escalation and fork-bombs.
+  - **OOM-Protected**: 5MB output cap prevents runaway scripts from crashing the host.
+  - **Isolated**: Read-only view of your project, no host access, 30s timeout.
 - **Host Mode (`host: true`)**: Full access to your environment. Required for opening local windows or hardware control.
 
 ## Testing Your Skill
@@ -91,3 +96,45 @@ pnpm dev chat "weather in Berlin"
 ```
 
 If the semantic router finds a high-confidence match, it will execute your skill and provide the result.
+
+## Advanced: TypeScript Plugins
+
+For complex logic requiring direct infrastructure access (via restricted capabilities), you can create TypeScript plugins.
+
+1.  Create a file in `src/runtime/skills/custom/` (e.g., `my-plugin.ts`).
+2.  Export a default skill using `defineSkill` (arguments are automatically inferred):
+
+```typescript
+import { z } from 'zod';
+import { defineSkill } from '../../skill.js';
+
+export default defineSkill({
+    name: 'my_plugin',
+    description: 'A custom logic block',
+    isVerified: false, // isVerified is ignored for external plugins.
+    argsSchema: z.object({
+        query: z.string()
+    }),
+    execute: async (args, context) => {
+        // args is automatically typed as { query: string }
+        const mem = await context.memory.recall(args.query);
+        return { success: true, data: { status: 'ok', related: mem } };
+    }
+});
+```
+
+### Capability-Based Isolation
+TypeScript plugins are restricted to a **SkillContext** that provides scoped capabilities:
+- **`memory`**: `store` and `recall` (no direct DB access).
+- **`sandbox`**: `runPython`, `runNode`, `runPlaywright` (isolated Docker execution).
+- **`brain`**: `ask` (nested LLM calls).
+- **`whatsapp`**: `send` (if enabled, no access to session state).
+
+### Security Note: Structural Integrity
+OpenMoose enforces a **Quadruple-Lock** policy for host access:
+1. **Trust-by-Location**: Skill must reside in `src/runtime/skills/builtins/`.
+2. **Trust-by-Manifest**: Skill name must exist on the centralized `manifest.ts`.
+3. **Trust-by-Integrity**: Skill `name` must match the manifest's mapping (e.g., `ls.js` vs name `ls`).
+4. **Trust-by-Protocol**: Non-core skills use Stdin-piped execution with kernel-level restrictions.
+
+Any custom skill or plugin residing outside core directories or with an unrecognized name is **Always unverified**. They are strictly isolated in a non-privileged Docker sandbox with no host access.

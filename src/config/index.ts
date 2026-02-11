@@ -31,7 +31,9 @@ function validateGpu(raw: string | undefined): 'auto' | 'metal' | 'cuda' | 'vulk
 
 export const config = {
     gateway: {
-        port: parseInt(process.env.GATEWAY_PORT || '18789', 10),
+        port: Number(process.env.GATEWAY_PORT || 18789),
+        /** Timeout for graceful cleanup on shutdown before forcing exit. */
+        shutdownTimeoutMs: Number(process.env.GATEWAY_SHUTDOWN_TIMEOUT_MS || 10000),
         maxHistoryLength: 20,
         portKillDelayMs: 500,
     },
@@ -49,8 +51,8 @@ export const config = {
     },
 
     router: {
-        /** Minimum confidence for considering a skill match. */
-        routeThreshold: 0.5,
+        /** Minimum confidence for considering a skill match. (Tuned up from 0.5 for less noise) */
+        routeThreshold: 0.55,
         /** Minimum confidence for actually executing a skill. */
         executeThreshold: 0.68,
     },
@@ -67,7 +69,7 @@ export const config = {
     skills: {
         /** Execution timeout for portable YAML skills (ms). */
         timeoutMs: 30_000,
-        customDir: path.join(process.cwd(), 'src/tools/custom'),
+        customDir: path.join(process.cwd(), 'skills/custom'),
     },
 
     audio: {

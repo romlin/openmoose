@@ -11,6 +11,9 @@ import { SkillContext } from './skill.js';
 import { logger } from '../infra/logger.js';
 import { getErrorMessage } from '../infra/errors.js';
 import { config } from '../config/index.js';
+import { getOpenCommand } from '../infra/opener.js';
+import { exec as execCb } from 'node:child_process';
+import { promisify } from 'node:util';
 
 interface PortableSkillDef {
     name: string;
@@ -101,9 +104,8 @@ export class PortableSkillLoader {
 
                     try {
                         if (def.host) {
-                            const { exec } = await import('node:child_process');
-                            const { promisify } = await import('node:util');
-                            const execAsync = promisify(exec);
+                            await PortableSkillLoader.validateHostDependencies(finalCommand);
+                            const execAsync = promisify(execCb);
 
                             try {
                                 const { stdout, stderr } = await execAsync(finalCommand, { timeout: config.skills.timeoutMs });
@@ -149,6 +151,9 @@ export class PortableSkillLoader {
     static interpolateCommand(command: string, args: Record<string, string>, context?: string): string {
         let interpolated = command;
 
+        // 0. Inject {{open}} placeholder
+        interpolated = interpolated.replace(/{{open}}/g, getOpenCommand());
+
         // 1. Interpolate explicit args: {{city}} -> 'Stockholm' (shell-escaped)
         for (const [key, value] of Object.entries(args)) {
             const escaped = shellEscape(value);
@@ -172,5 +177,31 @@ export class PortableSkillLoader {
 
         // 4. Clean up any remaining placeholders
         return interpolated.replace(/{{[a-zA-Z0-9_]+}}/g, '');
+    }
+
+    /**
+     * Validates that critical host-mode dependencies referenced in a command exist.
+     */
+    private static async validateHostDependencies(command: string): Promise<void> {
+        const potentialDeps = ['yt-dlp', 'xdg-open', 'open', 'start', 'ffmpeg', 'curl', 'wget'];
+        const missing = [];
+        const execAsync = promisify(execCb);
+
+        for (const dep of potentialDeps) {
+            // Check if the dependency is mentioned as a standalone command in the string
+            const regex = new RegExp(`\\b${dep}\\b`);
+            if (regex.test(command)) {
+                try {
+                    const checkCmd = process.platform === 'win32' ? `where ${dep}` : `command -v ${dep}`;
+                    await execAsync(checkCmd);
+                } catch {
+                    missing.push(dep);
+                }
+            }
+        }
+
+        if (missing.length > 0) {
+            logger.warn(`Missing host dependencies for skill: ${missing.join(', ')}. Command might fail.`, 'Security');
+        }
     }
 }

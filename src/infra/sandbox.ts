@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { config } from '../config/index.js';
 
-// Constants moved to config
+const MAX_OUTPUT_BYTES = 5 * 1024 * 1024; // 5MB cap
 
 /** Output from a sandboxed command execution. */
 export interface SandboxResult {
@@ -60,7 +60,13 @@ export class LocalSandbox {
       '--memory', memory,
       '--cpus', String(cpus),
       '--read-only',
-      '--tmpfs', '/tmp',
+      '--tmpfs', '/tmp:size=64m',
+      '--user', '1000:1000',
+      '--security-opt', 'no-new-privileges',
+      '--pids-limit', '50',
+      '--label', 'com.openmoose.app=true',
+      '--label', 'com.openmoose.version=1',
+      '--label', `com.openmoose.container_id=${this.containerName}`,
     ];
 
     if (isPlaywright) {
@@ -94,7 +100,6 @@ export class LocalSandbox {
       const child = spawn('docker', args);
       let stdout = '';
       let stderr = '';
-
       const timer = setTimeout(() => {
         spawn('docker', ['kill', this.containerName]).on('error', () => { /* fire and forget */ });
         resolve({
@@ -104,8 +109,12 @@ export class LocalSandbox {
         });
       }, timeout);
 
-      child.stdout.on('data', (d) => stdout += d);
-      child.stderr.on('data', (d) => stderr += d);
+      child.stdout.on('data', (d) => {
+        if (stdout.length < MAX_OUTPUT_BYTES) stdout += d;
+      });
+      child.stderr.on('data', (d) => {
+        if (stderr.length < MAX_OUTPUT_BYTES) stderr += d;
+      });
 
       child.on('close', (code) => {
         clearTimeout(timer);
@@ -115,13 +124,50 @@ export class LocalSandbox {
   }
 
   /**
-   * Generalized language runner to avoid duplication.
-   * Uses a temporary file approach to avoid shell escaping issues.
+   * Generalized language runner using stdin to avoid shell escaping issues.
    */
   private async runLanguage(image: string, cmd: string, code: string, options: SandboxOptions = {}) {
-    // Write code to a temp file inside the container to avoid shell injection
-    const escapedCode = code.replace(/'/g, "'\\''");
-    return this.execute(`${cmd} '${escapedCode}'`, { ...options, image });
+    const args = [
+      'run', '--rm', '--interactive',
+      '--name', this.containerName,
+      '--network', options.network || 'bridge',
+      '--memory', options.memory || config.sandbox.defaultMemory,
+      '--read-only',
+      '--security-opt', 'no-new-privileges',
+      '--pids-limit', '50',
+      '--label', 'com.openmoose.app=true',
+      '--user', '1000:1000',
+      image, 'sh', '-c', `${cmd} -`
+    ];
+
+    return new Promise<SandboxResult>((resolve) => {
+      // Titanium Elk Hardening: Use stdio: ['pipe', ...] to enable Stdin Piping.
+      // This provides 100% immunity to CLI-based shell injection and bypasses
+      // arg_max limits by streaming code directly into the runtime's stdin.
+      const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+
+      const timeout = options.timeout || config.sandbox.defaultTimeoutMs;
+      const timer = setTimeout(() => {
+        spawn('docker', ['kill', this.containerName]).on('error', () => { });
+        resolve({ stdout, stderr: stderr + '\n[Security] Timeout', exitCode: 124 });
+      }, timeout);
+
+      // Pipe the code via stdin
+      if (child.stdin) {
+        child.stdin.write(code);
+        child.stdin.end();
+      }
+
+      child.stdout.on('data', d => { if (stdout.length < MAX_OUTPUT_BYTES) stdout += d; });
+      child.stderr.on('data', d => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += d; });
+
+      child.on('close', code => {
+        clearTimeout(timer);
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 });
+      });
+    });
   }
 
   /** Run an arbitrary shell command in a sandboxed container. */
@@ -131,18 +177,18 @@ export class LocalSandbox {
 
   /** Execute Python 3.12 code in a sandboxed container. */
   async runPython(code: string, options: SandboxOptions = {}) {
-    return this.runLanguage('python:3.12-slim', 'python3 -c', code, options);
+    return this.runLanguage('python:3.12-slim', 'python3', code, options);
   }
 
   /** Execute Node.js code in a sandboxed container. */
   async runNode(code: string, options: SandboxOptions = {}) {
     const { image = 'node:22-slim' } = options;
-    return this.runLanguage(image, 'node -e', code, options);
+    return this.runLanguage(image, 'node', code, options);
   }
 
   /** Execute Playwright browser automation code in a sandboxed container. */
   async runPlaywright(code: string, options: SandboxOptions = {}) {
     const { image = config.sandbox.playwrightImage } = options;
-    return this.runLanguage(image, 'node -e', code, options);
+    return this.runLanguage(image, 'node', code, options);
   }
 }

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config } from '../../config/index.js';
 import { logger } from '../../infra/logger.js';
+import { getErrorMessage } from '../../infra/errors.js';
 import {
     BROWSER_DAEMON_PORT,
     BROWSER_DAEMON_CONTAINER_NAME,
@@ -32,8 +33,8 @@ function imageTag(): string {
 function dockerRun(args: string[], logTag?: string): Promise<number> {
     return new Promise(resolve => {
         const child = spawn('docker', args);
-        child.stdout.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => {});
-        child.stderr.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => {});
+        child.stdout.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => { });
+        child.stderr.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => { });
         child.on('error', () => resolve(1));
         child.on('close', code => resolve(code ?? 1));
     });
@@ -42,6 +43,7 @@ function dockerRun(args: string[], logTag?: string): Promise<number> {
 export class BrowserManager {
     /** In-flight promise to serialize concurrent ensureRunning() calls. */
     private static _ensureRunningPromise: Promise<void> | null = null;
+    private static isCleaning = false;
 
     /** Ensure the browser daemon container is running and healthy. */
     static ensureRunning(): Promise<void> {
@@ -55,6 +57,17 @@ export class BrowserManager {
     /** Actual start sequence -- only one runs at a time. */
     private static async _doEnsureRunning(): Promise<void> {
         if (await this.isHealthy()) return;
+
+        // Non-blocking Hygiene:
+        // 1. Critical: Clear the socket/lock files (fast)
+        await this.clearLocks().catch(() => { });
+
+        // 2. Heavy: Purge HARs, snapshots, and traces (slow, in background if not already cleaning)
+        if (!this.isCleaning) {
+            this.cleanup().catch(err => {
+                logger.debug(`Background cleanup error: ${getErrorMessage(err)}`, 'BrowserManager');
+            });
+        }
 
         // Remove any stale container before starting fresh
         await this.stop();
@@ -101,9 +114,72 @@ export class BrowserManager {
         await this.waitForHealthy();
     }
 
-    /** Stop and remove the daemon container. Clears the in-flight lock if active. */
+    /** Targeted cleanup of lock files to allow fast startup. */
+    private static async clearLocks(): Promise<void> {
+        const profileDir = config.sandbox.profileDir;
+        if (fs.existsSync(profileDir)) {
+            const files = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+            for (const file of files) {
+                const fullPath = path.join(profileDir, file);
+                if (fs.existsSync(fullPath)) {
+                    await fs.promises.unlink(fullPath).catch(() => { });
+                }
+            }
+        }
+    }
+
+    /** Stop and remove the daemon container. No-op if not found. */
     static async stop(): Promise<void> {
+        // -f removes running containers, ignore error if missing
         await dockerRun(['rm', '-f', BROWSER_DAEMON_CONTAINER_NAME]);
+    }
+
+    /** 
+     * Thorough cleanup of host artifacts and stopped containers.
+     * Fully async to prevent blocking the event loop on exit.
+     */
+    static async cleanup(): Promise<void> {
+        if (this.isCleaning) return;
+        this.isCleaning = true;
+
+        try {
+            logger.info('Performing deep cleanup of browser artifacts...', 'BrowserManager');
+
+            // 1. Force stop container
+            await this.stop();
+
+            const previewsDir = config.sandbox.previewsDir;
+            const profileDir = config.sandbox.profileDir;
+
+            // 2. Clean up old preview images/screenshots/logs (Async)
+            if (fs.existsSync(previewsDir)) {
+                try {
+                    const files = await fs.promises.readdir(previewsDir);
+                    const extensions = ['.png', '.jpg', '.har', '.trace', '.log', '.json'];
+                    await Promise.all(
+                        files.filter(f => extensions.some(ext => f.endsWith(ext)))
+                            .map(f => fs.promises.unlink(path.join(previewsDir, f)).catch(() => { }))
+                    );
+                } catch (err) {
+                    logger.warn(`Failed to clean previews: ${getErrorMessage(err)}`, 'BrowserManager');
+                }
+            }
+
+            // 3. Optional: Clear profile dir on hard reset (deep purge)
+            if (fs.existsSync(profileDir)) {
+                try {
+                    const files = await fs.promises.readdir(profileDir, { recursive: true });
+                    await Promise.all(
+                        files.filter(f => typeof f === 'string' && (f.includes('Singleton') || f.includes('Session') || f.endsWith('.lock')))
+                            .map(f => fs.promises.unlink(path.join(profileDir, f as string)).catch(() => { }))
+                    );
+                } catch {
+                    // Ignore profile cleanup errors
+                }
+            }
+        } finally {
+            this.isCleaning = false;
+        }
     }
 
     /** Check if the daemon is reachable and healthy. */

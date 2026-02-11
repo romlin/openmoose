@@ -18,7 +18,7 @@ const mockContext = {
 describe('memoryStoreSkill', () => {
     it('has correct metadata', () => {
         expect(memoryStoreSkill.name).toBe('memory_store');
-        expect(memoryStoreSkill.isVerified).toBe(false);
+        expect(memoryStoreSkill.isVerified).toBe(true);
     });
 
     it('stores a fact via memory.store', async () => {
@@ -42,7 +42,7 @@ describe('memoryStoreSkill', () => {
 describe('memoryRecallSkill', () => {
     it('has correct metadata', () => {
         expect(memoryRecallSkill.name).toBe('memory_recall');
-        expect(memoryRecallSkill.isVerified).toBe(false);
+        expect(memoryRecallSkill.isVerified).toBe(true);
     });
 
     it('recalls memories via memory.recall', async () => {

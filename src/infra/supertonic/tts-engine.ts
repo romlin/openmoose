@@ -12,7 +12,7 @@ export class Style {
 }
 
 /** TTS configuration loaded from tts.json. */
-interface TTSConfig {
+export interface TTSConfig {
     ae: { sample_rate: number; base_chunk_size: number };
     ttl: { chunk_compress_factor: number; latent_dim: number };
 }

@@ -52,9 +52,30 @@ export class AgentRunner {
         return {
             memory: this.memory,
             sandbox: this.sandbox,
-            brain: this.brain,
-            scheduler: this.scheduler,
-            whatsapp: this.whatsapp
+            brain: {
+                ask: async (prompt: string, options?: Record<string, unknown>) => {
+                    const tools = options?.tools as OpenAITool[] | undefined;
+                    const res = await this.brain.chat(prompt, [], tools);
+                    return res.content;
+                }
+            },
+            scheduler: {
+                schedule: async (prompt: string, scheduleValue: string, type: 'cron' | 'interval' | 'once' = 'once') => {
+                    const task = await this.scheduler.addTask({
+                        name: `Skill-triggered task: ${prompt.slice(0, 30)}...`,
+                        prompt,
+                        scheduleType: type,
+                        scheduleValue,
+                        status: 'active'
+                    });
+                    return task.id;
+                }
+            },
+            whatsapp: this.whatsapp ? {
+                send: async (to: string, text: string) => {
+                    await this.whatsapp.sendMessage(to, text);
+                }
+            } : undefined
         };
     }
 

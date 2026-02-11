@@ -5,21 +5,40 @@
  */
 
 import { z } from 'zod';
-import type { LocalMemory } from '../infra/memory.js';
-import type { LocalSandbox } from '../infra/sandbox.js';
-import type { LocalBrain } from '../agents/brain.js';
-import type { TaskScheduler } from './scheduler.js';
-import type { WhatsAppManager } from '../infra/whatsapp.js';
 
 /**
- * Skill execution context - typed dependencies
+ * Restricted capability interfaces for skills to interact with infrastructure
+ * without full object access.
+ */
+export interface SandboxCapability {
+    run(command: string, options?: Record<string, unknown>): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    runPython(code: string, options?: Record<string, unknown>): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    runNode(code: string, options?: Record<string, unknown>): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    runPlaywright(code: string, options?: Record<string, unknown>): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+}
+
+export interface MemoryCapability {
+    store(text: string, source?: 'chat' | 'doc', metadata?: Record<string, unknown>): Promise<void>;
+    recall(query: string, limit?: number): Promise<string[]>;
+}
+
+export interface MessagingCapability {
+    send(to: string, text: string): Promise<void>;
+}
+
+/**
+ * Skill execution context - capability-based dependencies
  */
 export interface SkillContext {
-    memory: LocalMemory;
-    sandbox: LocalSandbox;
-    brain: LocalBrain;
-    scheduler: TaskScheduler;
-    whatsapp?: WhatsAppManager;
+    memory: MemoryCapability;
+    sandbox: SandboxCapability;
+    brain: {
+        ask(prompt: string, options?: Record<string, unknown>): Promise<string>;
+    };
+    scheduler: {
+        schedule(prompt: string, scheduleValue: string, type?: 'cron' | 'interval' | 'once'): Promise<string>;
+    };
+    whatsapp?: MessagingCapability;
     isVerified?: boolean;
 }
 
@@ -33,7 +52,8 @@ export interface SkillResult<T = unknown> {
 }
 
 /**
- * Base skill interface with generic type for arguments
+ * Base skill interface with generic type for arguments.
+ * Strong generic constraints ensure execute args match the schema.
  */
 export interface Skill<TArgs = unknown, TResult = unknown> {
     /** Unique skill identifier */
@@ -48,13 +68,28 @@ export interface Skill<TArgs = unknown, TResult = unknown> {
     execute: (args: TArgs, context: SkillContext) => Promise<SkillResult<TResult>>;
 }
 
-/**
- * Helper to create a type-safe skill
+/** 
+ * AnySkill - Type-erased skill for registry storage while maintaining 
+ * the internal execution contract.
  */
-export function defineSkill<TArgs, TResult>(
-    config: Skill<TArgs, TResult>
-): Skill<TArgs, TResult> {
-    return config;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnySkill = Skill<any, any>;
+
+/**
+ * Helper to create a type-safe skill.
+ * Automatically infers TArgs from the provided argsSchema.
+ */
+export function defineSkill<TSchema extends z.ZodTypeAny, TResult = unknown>(
+    config: {
+        name: string;
+        description: string;
+        isVerified: boolean;
+        argsSchema: TSchema;
+        execute: (args: z.infer<TSchema>, context: SkillContext) => Promise<SkillResult<TResult>>;
+    }
+): Skill<z.infer<TSchema>, TResult> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return config as any;
 }
 
 /**

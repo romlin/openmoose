@@ -77,6 +77,13 @@ export class SemanticRouter {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
+    /**
+     * Hybrid matching: combines embedding similarity with regex-based boosting.
+     * If a skill's argument regex matches the message, its score gets a boost,
+     * because regex match is a deterministic signal that the skill is correct.
+     */
+    private static readonly REGEX_BOOST = 0.15;
+
     async route(message: string, threshold: number = 0.75): Promise<RouteMatch | null> {
         await this.initialize();
 
@@ -96,12 +103,20 @@ export class SemanticRouter {
                 }
             }
 
+            // Hybrid boost: if the skill's regex patterns match, bump confidence
+            const args = route.extractArgs ? route.extractArgs(message) : {};
+            const hasExtractedArgs = Object.values(args).some(v => v && v.length > 0);
+            if (hasExtractedArgs) {
+                maxSimilarity = Math.min(1.0, maxSimilarity + SemanticRouter.REGEX_BOOST);
+                logger.debug(`Regex boost for "${route.name}": +${(SemanticRouter.REGEX_BOOST * 100).toFixed(0)}% → ${(maxSimilarity * 100).toFixed(1)}%`, 'Router');
+            }
+
             if (maxSimilarity > bestScore) {
                 bestScore = maxSimilarity;
                 bestMatch = {
                     skill: route,
                     confidence: maxSimilarity,
-                    args: route.extractArgs ? route.extractArgs(message) : {},
+                    args,
                 };
             }
         }

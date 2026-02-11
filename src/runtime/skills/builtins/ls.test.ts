@@ -4,11 +4,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../infra/safe-path.js', () => ({
+vi.mock('../../../infra/safe-path.js', () => ({
     assertSafePath: vi.fn((p: string) => `/project/${p}`),
 }));
 
-vi.mock('../infra/logger.js', () => ({
+vi.mock('../../../infra/logger.js', () => ({
     logger: { debug: vi.fn(), info: vi.fn(), error: vi.fn(), warn: vi.fn(), success: vi.fn() },
 }));
 
@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', () => ({
 
 import { listSkill } from './ls.js';
 import { readdir, stat } from 'node:fs/promises';
-import { assertSafePath } from '../infra/safe-path.js';
+import { assertSafePath } from '../../../infra/safe-path.js';
 
 const mockedReaddir = vi.mocked(readdir);
 const mockedStat = vi.mocked(stat);
@@ -33,7 +33,7 @@ beforeEach(() => {
 describe('listSkill', () => {
     it('has correct metadata', () => {
         expect(listSkill.name).toBe('ls');
-        expect(listSkill.isVerified).toBe(false);
+        expect(listSkill.isVerified).toBe(true);
     });
 
     it('lists files and directories', async () => {

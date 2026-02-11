@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../infra/safe-path.js', () => ({
+vi.mock('../../../infra/safe-path.js', () => ({
     assertSafePath: vi.fn((p: string) => `/project/${p}`),
 }));
 
@@ -14,7 +14,7 @@ vi.mock('node:fs/promises', () => ({
 
 import { readSkill } from './read.js';
 import { readFile } from 'node:fs/promises';
-import { assertSafePath } from '../infra/safe-path.js';
+import { assertSafePath } from '../../../infra/safe-path.js';
 
 const mockedReadFile = vi.mocked(readFile);
 const mockedAssertSafe = vi.mocked(assertSafePath);
@@ -27,7 +27,7 @@ beforeEach(() => {
 describe('readSkill', () => {
     it('has correct metadata', () => {
         expect(readSkill.name).toBe('read');
-        expect(readSkill.isVerified).toBe(false);
+        expect(readSkill.isVerified).toBe(true);
     });
 
     it('reads a file successfully', async () => {

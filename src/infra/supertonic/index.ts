@@ -9,15 +9,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as ort from 'onnxruntime-node';
 import { UnicodeProcessor } from './text-processor.js';
-import { TextToSpeech, Style } from './tts-engine.js';
+import { TextToSpeech, Style, type TTSConfig } from './tts-engine.js';
 import { logger } from '../logger.js';
 
 export { TextToSpeech, Style } from './tts-engine.js';
 export { chunkText } from './text-processor.js';
 
 /** Safely parse a JSON model file, wrapping errors with the file path. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function readModelJson(filePath: string): any {
+function readModelJson(filePath: string): unknown {
     try {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (err) {
@@ -28,7 +27,7 @@ function readModelJson(filePath: string): any {
 /** Load voice style embeddings from JSON files. */
 export function loadVoiceStyle(voiceStylePaths: string[]): Style {
     const bsz = voiceStylePaths.length;
-    const firstStyle = readModelJson(voiceStylePaths[0]);
+    const firstStyle = readModelJson(voiceStylePaths[0]) as { style_ttl: { dims: number[] }; style_dp: { dims: number[] } };
     const ttlDims = firstStyle.style_ttl.dims;
     const dpDims = firstStyle.style_dp.dims;
 
@@ -41,10 +40,13 @@ export function loadVoiceStyle(voiceStylePaths: string[]): Style {
     const dpFlat = new Float32Array(bsz * dpDim1 * dpDim2);
 
     for (let i = 0; i < bsz; i++) {
-        const voiceStyle = readModelJson(voiceStylePaths[i]);
-        const ttlData = voiceStyle.style_ttl.data.flat(Infinity);
+        const voiceStyle = readModelJson(voiceStylePaths[i]) as {
+            style_ttl: { data: number[][][] };
+            style_dp: { data: number[][][] };
+        };
+        const ttlData = voiceStyle.style_ttl.data.flat(Infinity) as unknown as number[];
         ttlFlat.set(ttlData, i * ttlDim1 * ttlDim2);
-        const dpData = voiceStyle.style_dp.data.flat(Infinity);
+        const dpData = voiceStyle.style_dp.data.flat(Infinity) as unknown as number[];
         dpFlat.set(dpData, i * dpDim1 * dpDim2);
     }
 
@@ -58,7 +60,7 @@ export async function loadTextToSpeech(onnxDir: string): Promise<TextToSpeech> {
     logger.info('Loading TTS models from: ' + onnxDir, 'Supertonic');
     const opts = {};
 
-    const cfgs = readModelJson(path.join(onnxDir, 'tts.json'));
+    const cfgs = readModelJson(path.join(onnxDir, 'tts.json')) as TTSConfig;
 
     const [dpOrt, textEncOrt, vectorEstOrt, vocoderOrt] = await Promise.all([
         ort.InferenceSession.create(path.join(onnxDir, 'duration_predictor.onnx'), opts),
