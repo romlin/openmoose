@@ -1,6 +1,6 @@
 {
   "name": "openmoose",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenMoose: The local-first AI assistant that doesn’t charge you by the antler.",
   "engines": {
     "node": ">=20.0.0"
