@@ -333,7 +333,11 @@ OpenMoose does not phone home. However, if a skill command includes a URL (e.g.,
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Logo & Trademark
+
+The OpenMoose logo (`openmoose.svg`) is **not** covered by the MIT license. You may not use the logo for commercial purposes or in a way that implies endorsement by OpenMoose without explicit permission.
 
 ## Credits
 
