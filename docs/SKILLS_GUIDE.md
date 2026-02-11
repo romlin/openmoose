@@ -79,7 +79,7 @@ In your `command`, you can use these arguments:
 > [!CAUTION]
 > By default, portable skills run inside a **hardened Docker sandbox**. However, if you set `host: true`, the command will run directly on your host machine. **Use this only for trusted skills** (e.g., controlling a local player or opening a browser).
 
-- **Sandboxed (Default)**: Read-only view of your project, no host access, 15s timeout.
+- **Sandboxed (Default)**: Read-only view of your project, no host access, 30s timeout.
 - **Host Mode (`host: true`)**: Full access to your environment. Required for opening local windows or hardware control.
 
 ## Testing Your Skill
