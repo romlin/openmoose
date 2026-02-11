@@ -268,7 +268,12 @@ export class LocalGateway {
         this.brain = new LocalBrain({ memory: this.memory, registry: this.skillRegistry, skillsPrompt: this.skillsPrompt });
         this.runner = new AgentRunner(this.brain, this.memory, this.sandbox, this.skillRegistry, this.scheduler, this.whatsapp);
         await this.runner.init();
-        printStatus('Brain', `${config.brain.provider} · ${modelName}`);
+
+        const brainStatus = config.brain.provider === 'mistral'
+            ? `${config.brain.provider} · ${modelName}`
+            : `${config.brain.provider} · ${config.brain.llamaCpp.gpu} · ${modelName}`;
+
+        printStatus('Brain', brainStatus);
     }
 
     private async startScheduler() {

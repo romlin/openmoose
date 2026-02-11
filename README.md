@@ -36,6 +36,25 @@ Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp.
 | [Docker](https://docker.com) | Latest | Sandbox execution |
 | [git-lfs](https://git-lfs.com) | Latest | TTS model download |
 | [pnpm](https://pnpm.io) | Latest | Package manager |
+| [CMake](https://cmake.org) | >= 3.10 | Required for GPU build (Linux) |
+
+## Hardware Acceleration (NVIDIA/CUDA)
+
+To enable GPU acceleration on Linux (Ubuntu), you need the NVIDIA driver and the CUDA toolkit:
+
+```bash
+# 1. Install NVIDIA drivers (if not present)
+sudo ubuntu-drivers install
+sudo reboot
+
+# 2. Install build tools and CUDA toolkit
+sudo apt install cmake build-essential nvidia-cuda-toolkit
+```
+
+In your `.env` file, set:
+```bash
+LLAMA_CPP_GPU=cuda
+```
 
 ## Quick Start
 
@@ -124,6 +143,7 @@ LLM_PROVIDER=node-llama-cpp
 
 # Local LLM (node-llama-cpp)
 LLAMA_CPP_MODEL_PATH=models/llama-cpp/ministral-8b-reasoning-q4km.gguf
+LLAMA_CPP_GPU=auto              # 'auto', 'cuda', 'metal', 'vulkan', or 'false'
 
 # Mistral AI (cloud)
 MISTRAL_MODEL=mistral-large-latest
