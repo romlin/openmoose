@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="openmoose.svg" width="200" alt="OpenMoose">
+</p>
+
 # OpenMoose
 
 **The local-first AI assistant that doesn't charge you by the antler.**
