@@ -19,14 +19,23 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
        patterns:
          - "play latest video by ([a-zA-Z0-9\\s]+)"
    host: true
-   command: "if [ -n \"{{id}}\" ]; then xdg-open \"https://www.youtube.com/watch?v={{id}}\" & else ID=$(yt-dlp --get-id \"ytsearch1:{{query}} latest\"); xdg-open \"https://www.youtube.com/watch?v=$ID\" & fi"
+   command: |
+     if [ -n "{{id}}" ]; then
+       xdg-open "https://www.youtube.com/watch?v={{id}}" &
+     else
+       CH=$(yt-dlp --print uploader_url --playlist-end 1 "ytsearch1:{{query}}" 2>/dev/null)
+       ID=$(yt-dlp --get-id --flat-playlist --playlist-end 1 "$CH/videos" 2>/dev/null)
+       xdg-open "https://www.youtube.com/watch?v=$ID" &
+     fi
    ```
 2. Restart the gateway (`pnpm gateway`).
 3. Ask: "play latest video by pewdiepie".
 
-> [!NOTE]
-> This example uses **host mode** and requires `yt-dlp` to be installed on your machine (`pip install yt-dlp` or via your package manager). 
-> The command uses `xdg-open` (Linux). For **macOS**, replace it with `open`. For **Windows**, use `start`.
+> [!IMPORTANT]
+> **Prerequisites & Platform Notes**:
+> - **External Tools**: This skill requires `yt-dlp` and `xdg-open` on your host machine.
+> - **Install yt-dlp**: Install via your platform's package manager (e.g., `brew install yt-dlp`, `sudo apt install yt-dlp`) or via pip (`pip install yt-dlp`) **before** running the gateway.
+> - **OS Alternatives**: `xdg-open` is Linux-specific. For **macOS**, use `open`. For **Windows**, use `start`.
 
 ## Skill Schema
 
