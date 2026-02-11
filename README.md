@@ -337,7 +337,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Logo & Trademark
 
-The OpenMoose logo (`openmoose.svg`) is **not** covered by the MIT license. You may not use the logo for commercial purposes or in a way that implies endorsement by OpenMoose without explicit permission.
+The OpenMoose logo (`openmoose.svg`) was created by Petter, 7 years old. It is **not** covered by the MIT license. You may not use the logo for commercial purposes or in a way that implies endorsement by OpenMoose without explicit permission.
 
 ## Credits
 
