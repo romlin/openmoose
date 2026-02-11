@@ -15,7 +15,7 @@ When you send a message, the gateway processes it through a pipeline:
 
 The LLM interface uses the OpenAI-compatible chat completions API, which means it works with any provider that speaks that protocol:
 
-- **Integrated Local Engine** (default) -- Ministral-8B Reasoning running via `node-llama-cpp`. Fast, private, free.
+- **Integrated Local Engine** (default) -- Ministral-14B Reasoning running via `node-llama-cpp`. Fast, private, free.
 - **Mistral AI** -- Cloud-hosted models for higher capability when needed.
 
 The brain supports streaming responses and native tool calling. System prompts are dynamically constructed with the current date/time, available tools, memory context, and skill definitions.

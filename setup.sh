@@ -157,13 +157,13 @@ fi
 
 echo ""
 log_header "Downloading LLM Model..."
-LLM_FILE="models/llama-cpp/ministral-8b-reasoning-q4km.gguf"
-LLM_URL="https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF/resolve/main/Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf"
+LLM_FILE="models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf"
+LLM_URL="https://huggingface.co/mistralai/Ministral-3-14B-Reasoning-2512-GGUF/resolve/main/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf"
 
 if [ -f "$LLM_FILE" ] && [ "$(stat -c%s "$LLM_FILE")" -gt 1000000000 ]; then
   log_ok "Local LLM model already present"
 else
-  download_with_progress "$LLM_URL" "$LLM_FILE" "Ministral-8B Reasoning (integrated)"
+  download_with_progress "$LLM_URL" "$LLM_FILE" "Ministral-14B Reasoning (integrated)"
 fi
 
 # ── 3. TTS Model ────────────────────────────────────────────────────────────

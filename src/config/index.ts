@@ -54,7 +54,7 @@ export const config = {
             apiKey: process.env.MISTRAL_API_KEY,
         },
         llamaCpp: {
-            modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(process.cwd(), 'models/llama-cpp/ministral-8b-reasoning-q4km.gguf'),
+            modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(process.cwd(), 'models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf'),
             gpu: validateGpu(process.env.LLAMA_CPP_GPU),
         }
     },

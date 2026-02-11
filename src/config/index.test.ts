@@ -17,7 +17,7 @@ describe('config', () => {
 
     it('has llama-cpp model path', () => {
         expect(config.brain.llamaCpp.modelPath).toBeTruthy();
-        expect(config.brain.llamaCpp.modelPath).toContain('ministral-8b');
+        expect(config.brain.llamaCpp.modelPath).toMatch(/\.gguf$/);
     });
 
     it('has mistral model name', () => {

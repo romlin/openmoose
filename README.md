@@ -22,7 +22,7 @@ Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp.
 
 ## Features
 
-- **Local Brain** -- Powered by an integrated local engine (`node-llama-cpp`, Ministral-8B Reasoning default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
+- **Local Brain** -- Powered by an integrated local engine (`node-llama-cpp`, Ministral-14B Reasoning default) or [Mistral AI](https://mistral.ai) cloud. All conversations stay on your hardware when running locally.
 - **Semantic Routing** -- Common intents (time, weather, messaging) are matched instantly via local embeddings (Transformers.js), bypassing the LLM entirely for zero-latency responses.
 - **Vector Memory** -- Long-term memory backed by [LanceDB](https://lancedb.com). Stores facts from conversations and indexes your local Markdown documents using local embeddings.
 - **Secure Sandbox** -- All code execution happens inside hardened Docker containers with stdin-piped execution (injection-immune), `no-new-privileges` kernel security, PID limits (fork-bomb protection), and a 5MB output cap.
@@ -146,7 +146,7 @@ GATEWAY_SHUTDOWN_TIMEOUT_MS=10000 # Max time for graceful cleanup (ms)
 LLM_PROVIDER=node-llama-cpp
 
 # Local LLM (node-llama-cpp)
-LLAMA_CPP_MODEL_PATH=models/llama-cpp/ministral-8b-reasoning-q4km.gguf
+LLAMA_CPP_MODEL_PATH=models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf
 LLAMA_CPP_GPU=auto              # 'auto', 'cuda', 'metal', 'vulkan', or 'false'
 
 # Mistral AI (cloud)
@@ -371,7 +371,7 @@ OpenMoose is built on these open-source projects and models:
 
 | Model | License | Commercial | Description |
 |---|---|---|---|
-| [Ministral-8B Reasoning](https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF) | Apache-2.0 | Yes | Default LLM (integrated GGUF) |
+| [Ministral-14B Reasoning](https://huggingface.co/mistralai/Ministral-3-14B-Reasoning-2512-GGUF) | Apache-2.0 | Yes | Default LLM (integrated GGUF) |
 | [all-MiniLM-L6-v2](https://huggingface.co/xenova/all-MiniLM-L6-v2) | Apache-2.0 | Yes | Embedding model (integrated) |
 | [Supertonic 2](https://huggingface.co/Supertone/supertonic-2) | Open RAIL-M | Conditional | Text-to-speech (ONNX) |
 

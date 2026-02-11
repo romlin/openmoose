@@ -59,7 +59,7 @@ ENV NODE_ENV=production
 ENV GATEWAY_PORT=18789
 ENV LLM_PROVIDER=node-llama-cpp
 ENV LLAMA_CPP_GPU=auto
-ENV LLAMA_CPP_MODEL_PATH=/app/models/llama-cpp/ministral-8b-reasoning-q4km.gguf
+ENV LLAMA_CPP_MODEL_PATH=/app/models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf
 
 # Expose the gateway port
 EXPOSE 18789

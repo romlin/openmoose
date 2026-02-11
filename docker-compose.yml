@@ -18,7 +18,7 @@ services:
       - GATEWAY_PORT=${GATEWAY_PORT:-18789}
       - LLM_PROVIDER=${LLM_PROVIDER:-node-llama-cpp}
       - LLAMA_CPP_GPU=${LLAMA_CPP_GPU:-auto}
-      - LLAMA_CPP_MODEL_PATH=${LLAMA_CPP_MODEL_PATH:-/app/models/llama-cpp/ministral-8b-reasoning-q4km.gguf}
+      - LLAMA_CPP_MODEL_PATH=${LLAMA_CPP_MODEL_PATH:-/app/models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf}
       - BROWSER_PROFILE_DIR=/app/.moose/data/browser-profiles
       - LOG_LEVEL=${LOG_LEVEL:-info}
     deploy:
