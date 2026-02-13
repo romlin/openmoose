@@ -88,7 +88,11 @@ body {
     background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(4px);
     z-index: 90;
-    animation: fadeIn 0.2s ease-out;
+    animation: fade-in 0.2s ease-out;
+}
+
+.fadeIn {
+    animation: fade-in 0.2s ease-out;
 }
 
 @media (max-width: 768px) {
@@ -390,7 +394,7 @@ body {
     font-size: 1rem;
 }
 
-@keyframes fadeIn {
+@keyframes fade-in {
     0% {
         opacity: 0;
         transform: translateY(4px);

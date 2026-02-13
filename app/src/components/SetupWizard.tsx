@@ -27,7 +27,7 @@ export function SetupWizard({
         if (step === 2 && dockerStatus === "not_checked") {
             checkDocker();
         }
-        if (step === 3 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total))) {
+        if (step === 3 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
             onStartDownload();
         }
     }, [step, dockerStatus, isDownloading, onStartDownload, downloadProgress]);

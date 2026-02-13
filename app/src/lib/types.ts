@@ -4,7 +4,7 @@
 
 export interface Message {
     id: number;
-    role: "user" | "moose";
+    role: "user" | "assistant";
     content: string;
 }
 
@@ -61,7 +61,7 @@ export interface GatewayMessage {
     text?: string;
     status?: BrainStatus;
     message?: string;
-    history?: Array<{ role: "user" | "moose"; content: string }>;
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
     success?: boolean;
     memories?: MemoryEntry[];
 }

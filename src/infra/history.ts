@@ -18,8 +18,8 @@ export interface HistoryMessage {
 export class HistoryManager {
     private historyPath: string;
 
-    constructor() {
-        this.historyPath = path.join(config.mooseHome, 'data/history.jsonl');
+    constructor(customPath?: string) {
+        this.historyPath = customPath || path.join(config.mooseHome, 'data/history.jsonl');
     }
 
     private async ensureDir() {

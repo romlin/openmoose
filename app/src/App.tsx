@@ -12,7 +12,7 @@ import "./App.css";
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: "moose", content: "How can I help you today?" }
+    { id: 1, role: "assistant", content: "How can I help you today?" }
   ]);
   const [view, setView] = useState<ViewType>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +21,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const [ws, setWs] = useState<WebSocket | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -44,7 +45,7 @@ function App() {
         setIsThinking(false);
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.role === "moose") {
+          if (last && last.role === "assistant") {
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...last,
@@ -52,7 +53,7 @@ function App() {
             };
             return updated;
           }
-          return [...prev, { id: Date.now(), role: "moose", content: payload.text || "" }];
+          return [...prev, { id: Date.now(), role: "assistant", content: payload.text || "" }];
         });
         break;
       case "agent.tool_call":
@@ -63,7 +64,7 @@ function App() {
         break;
       case "error":
         setIsThinking(false);
-        setMessages(prev => [...prev, { id: Date.now(), role: "moose", content: `Error: ${payload.message} ` }]);
+        setMessages(prev => [...prev, { id: Date.now(), role: "assistant", content: `Error: ${payload.message} ` }]);
         break;
       case "agent.history.result":
         if (payload.history && payload.history.length > 0) {
@@ -77,7 +78,7 @@ function App() {
       case "agent.history.clear.result":
         if (payload.success) {
           setMessages([
-            { id: Date.now(), role: "moose", content: "History wiped cleanly. Moose is ready!" }
+            { id: Date.now(), role: "assistant", content: "History wiped cleanly. Moose is ready!" }
           ]);
         }
         break;
@@ -99,14 +100,19 @@ function App() {
   }, []);
 
   const connectWebSocket = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+    // Return early if we have a socket that is not CLOSED.
+    // This prevents CONNECTING or OPEN sockets from being overwritten.
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) return;
 
     const port = gatewayPortRef.current;
     const ws = new WebSocket(`ws://localhost:${port}`);
+    // Set ref immediately so subsequent calls block
+    wsRef.current = ws;
 
     ws.onopen = () => {
       console.log(`Connected to Gateway on port ${port}`);
       wsRef.current = ws;
+      setWs(ws);
       ws.send(JSON.stringify({ type: "agent.history", limit: 50 }));
     };
 
@@ -121,13 +127,13 @@ function App() {
 
     ws.onerror = (err) => {
       console.error("WebSocket error:", err);
-      ws.close();
-      setTimeout(connectWebSocket, 1000);
+      // Do NOT force close or reconnect here; let onclose handle cleanup/retry
     };
 
     ws.onclose = () => {
       console.log("WebSocket disconnected");
       wsRef.current = null;
+      setWs(null);
       setTimeout(connectWebSocket, 1000);
     };
   }, [handleGatewayMessage]);
@@ -157,7 +163,7 @@ function App() {
 
         if (info.config.setup_complete && info.model_exists) {
           setMessages([
-            { id: 1, role: "moose", content: `Moose is ready with **${name}**. How can I help you today?` }
+            { id: 1, role: "assistant", content: `Moose is ready with **${name}**. How can I help you today?` }
           ]);
         }
 
@@ -301,7 +307,7 @@ function App() {
       {view === "debug" && (
         <DebugView
           onBack={() => setView("chat")}
-          ws={wsRef.current}
+          ws={ws}
           onMenuToggle={() => setSidebarOpen(true)}
         />
       )}

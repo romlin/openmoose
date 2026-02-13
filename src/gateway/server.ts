@@ -253,16 +253,24 @@ export class LocalGateway {
             logger.info(`Process ID: ${pid}`, 'Gateway');
 
             // When running headlessly (e.g. spawned by the desktop app),
-            // auto-kill the stale gateway instead of prompting via stdin.
+            // require explicit opt-in via env var to auto-kill, otherwise fail.
             const isInteractive = process.stdin.isTTY === true;
-            const shouldKill = isInteractive
-                ? await askConfirm(`Kill existing process and restart? (y/n): `)
-                : true;
+            const autoKill = process.env.AUTO_KILL_GATEWAY === 'true';
+
+            let shouldKill = false;
+
+            if (isInteractive) {
+                shouldKill = await askConfirm(`Kill existing process and restart? (y/n): `);
+            } else if (autoKill) {
+                logger.info(`Non-interactive mode: AUTO_KILL_GATEWAY is set, killing process ${pid}`, 'Gateway');
+                shouldKill = true;
+            } else {
+                logger.warn(`Port ${this.port} is in use by process ${pid}.`, 'Gateway');
+                logger.warn(`Run with AUTO_KILL_GATEWAY=true or kill the process manually.`, 'Gateway');
+                shouldKill = false; // logic below handles exit
+            }
 
             if (shouldKill) {
-                if (!isInteractive) {
-                    logger.info(`Non-interactive mode: auto-killing process ${pid}`, 'Gateway');
-                }
                 if (killProcess(pid)) {
                     logger.success(`Killed process ${pid}`, 'Gateway');
                     await new Promise(r => setTimeout(r, config.gateway.portKillDelayMs));
@@ -272,7 +280,7 @@ export class LocalGateway {
                 }
             } else {
                 logger.info('Aborted.', 'Gateway');
-                process.exit(0);
+                process.exit(1); // Exit 1 if we couldn't start
             }
         } else {
             logger.error(`Could not find the process using port ${this.port}.`, 'Gateway');

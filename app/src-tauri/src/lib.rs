@@ -44,17 +44,17 @@ fn default_theme() -> String {
     "dark".to_string()
 }
 
-fn get_moose_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "Could not find home directory")?;
-    Ok(PathBuf::from(home).join(".moose"))
+fn get_moose_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    Ok(home.join(".moose"))
 }
 
-fn get_config_path() -> Result<PathBuf, String> {
-    Ok(get_moose_dir()?.join("config.json"))
+fn get_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(get_moose_dir(app)?.join("config.json"))
 }
 
-fn get_model_path() -> Result<PathBuf, String> {
-    Ok(get_moose_dir()?.join(format!("models/llama-cpp/{}", MODEL_FILENAME)))
+fn get_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(get_moose_dir(app)?.join(format!("models/llama-cpp/{}", MODEL_FILENAME)))
 }
 
 fn get_gateway_port() -> u16 {
@@ -138,7 +138,7 @@ async fn start_gateway(
 async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> {
     let mut lock = state.0.lock().unwrap();
     if let Some(child) = lock.take() {
-        let kill_result: Result<(), tauri_plugin_shell::Error> = child.kill();
+        let kill_result = child.kill();
         match kill_result {
             Ok(_) => Ok("Gateway stopped".to_string()),
             Err(e) => Err(format!("Failed to stop gateway: {}", e)),
@@ -151,7 +151,7 @@ async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> 
 #[tauri::command]
 async fn download_model<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let url = MODEL_URL;
-    let file_path = get_model_path()?;
+    let file_path = get_model_path(&app)?;
     let path = file_path.parent().unwrap();
 
     println!("[Rust] Starting download from: {}", url);
@@ -288,8 +288,8 @@ async fn download_model<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 }
 
 /// Reads the full config.json as a serde_json::Value (preserves all fields).
-fn read_config_raw() -> Result<serde_json::Value, String> {
-    let path = get_config_path()?;
+fn read_config_raw(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let path = get_config_path(app)?;
     if !path.exists() {
         return Ok(serde_json::json!({}));
     }
@@ -297,13 +297,13 @@ fn read_config_raw() -> Result<serde_json::Value, String> {
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
-fn get_config_internal() -> Result<AppConfig, String> {
-    let raw = read_config_raw()?;
+fn get_config_internal(app: &tauri::AppHandle) -> Result<AppConfig, String> {
+    let raw = read_config_raw(app)?;
     serde_json::from_value(raw).map_err(|e| e.to_string())
 }
 
-async fn check_model_exists_internal() -> bool {
-    match get_model_path() {
+async fn check_model_exists_internal(app: &tauri::AppHandle) -> bool {
+    match get_model_path(app) {
         Ok(p) => {
             if !p.exists() {
                 return false;
@@ -317,15 +317,15 @@ async fn check_model_exists_internal() -> bool {
 }
 
 #[tauri::command]
-async fn check_model_exists() -> bool {
-    check_model_exists_internal().await
+async fn check_model_exists(app: tauri::AppHandle) -> bool {
+    check_model_exists_internal(&app).await
 }
 
 #[tauri::command]
-async fn get_startup_info() -> Result<StartupInfo, String> {
-    let config = get_config_internal()?;
-    let model_exists = check_model_exists_internal().await;
-    let model_path = get_model_path()?;
+async fn get_startup_info(app: tauri::AppHandle) -> Result<StartupInfo, String> {
+    let config = get_config_internal(&app)?;
+    let model_exists = check_model_exists_internal(&app).await;
+    let model_path = get_model_path(&app)?;
     let (model_name, model_size) = if model_exists {
         let name = model_path
             .file_name()
@@ -346,19 +346,19 @@ async fn get_startup_info() -> Result<StartupInfo, String> {
 }
 
 #[tauri::command]
-async fn get_config() -> Result<AppConfig, String> {
-    get_config_internal()
+async fn get_config(app: tauri::AppHandle) -> Result<AppConfig, String> {
+    get_config_internal(&app)
 }
 
 #[tauri::command]
-async fn update_config(config: AppConfig) -> Result<(), String> {
-    let path = get_config_path()?;
+async fn update_config(app: tauri::AppHandle, config: AppConfig) -> Result<(), String> {
+    let path = get_config_path(&app)?;
     let moose_dir = path.parent().unwrap();
 
     std::fs::create_dir_all(moose_dir).map_err(|e| e.to_string())?;
 
     // Read-modify-write: preserve any fields the gateway or user may have set.
-    let mut existing = read_config_raw()?;
+    let mut existing = read_config_raw(&app)?;
     let obj = existing
         .as_object_mut()
         .ok_or("config.json is not a JSON object")?;
@@ -414,7 +414,7 @@ pub fn run() {
             let state = app.state::<GatewayState>();
 
             // Check if setup is complete
-            if let Ok(config) = get_config_internal() {
+            if let Ok(config) = get_config_internal(&handle) {
                 if config.setup_complete {
                     println!("[Rust] Auto-starting gateway in background...");
                     let _ = start_gateway_internal(&handle, &state);
@@ -429,18 +429,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_get_moose_dir() {
-        let dir = get_moose_dir().unwrap();
-        assert!(dir.to_string_lossy().ends_with(".moose"));
-    }
-
-    #[test]
-    fn test_get_model_path_uses_constant() {
-        let path = get_model_path().unwrap();
-        assert!(path.to_string_lossy().contains(MODEL_FILENAME));
-    }
 
     #[test]
     fn test_default_gateway_port() {

@@ -1,17 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HistoryManager } from './history';
 import { rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { config } from '../config';
+import os from 'node:os';
 
 describe('HistoryManager', () => {
-    const history = new HistoryManager();
-    const testFile = path.join(config.mooseHome, 'data/history.jsonl');
+    let tempDir: string;
+    let history: HistoryManager;
+    let testFile: string;
 
     beforeEach(async () => {
-        if (existsSync(testFile)) {
-            await rm(testFile);
+        tempDir = await import('fs/promises').then(fs => fs.mkdtemp(path.join(os.tmpdir(), 'moose-test-')));
+        testFile = path.join(tempDir, 'history.jsonl');
+        history = new HistoryManager(testFile);
+    });
+
+    afterEach(async () => {
+        if (existsSync(tempDir)) {
+            await rm(tempDir, { recursive: true, force: true });
         }
     });
 
