@@ -160,4 +160,45 @@ export class LocalMemory {
     await this.ensureInitialized();
     await this.table!.delete('id IS NOT NULL');
   }
+
+  /**
+   * List all memories (latest first)
+   */
+  async list(limit: number = 100, source?: 'chat' | 'doc'): Promise<Omit<MemoryEntry, 'vector'>[]> {
+    await this.ensureInitialized();
+    let query = this.table!.query();
+
+    if (source) {
+      query = query.where(`source = '${source}'`);
+    }
+
+    const results = await query
+      .select(['id', 'text', 'source', 'metadata', 'createdAt'])
+      .limit(limit)
+      .toArray();
+
+    return (results as unknown as Omit<MemoryEntry, 'vector'>[]).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * Search memories by text (keyword search)
+   */
+  async search(text: string, limit: number = 50, source?: 'chat' | 'doc'): Promise<Omit<MemoryEntry, 'vector'>[]> {
+    await this.ensureInitialized();
+    const escaped = text.replace(/'/g, "''");
+    let query = `text LIKE '%${escaped}%'`;
+
+    if (source) {
+      query += ` AND source = '${source}'`;
+    }
+
+    const results = await this.table!
+      .query()
+      .where(query)
+      .select(['id', 'text', 'source', 'metadata', 'createdAt'])
+      .limit(limit)
+      .toArray();
+
+    return (results as unknown as Omit<MemoryEntry, 'vector'>[]).sort((a, b) => b.createdAt - a.createdAt);
+  }
 }

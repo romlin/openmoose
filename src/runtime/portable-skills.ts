@@ -21,7 +21,7 @@ interface PortableSkillDef {
     examples: string[];
     args?: Record<string, { patterns: string[], fallback?: string }>;
     command: string; // The shell command to run (with {{arg}} placeholders)
-    host?: boolean;  // Whether to run on the host machine instead of the sandbox
+    host?: boolean;  // Whether to run on the host machine (trusted skills only)
     image?: string; // Optional custom Docker image
 }
 

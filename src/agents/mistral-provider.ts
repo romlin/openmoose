@@ -152,4 +152,8 @@ export class MistralProvider implements BrainProvider {
             return { ok: false, host: this.baseUrl, model: this.model, isCloud: true, status: getErrorMessage(err) };
         }
     }
+
+    async warmup() {
+        // Mistral is a cloud provider, no warmup needed.
+    }
 }

@@ -16,7 +16,6 @@ import { PortableSkillLoader } from './portable-skills.js';
 import { logger } from '../infra/logger.js';
 import { getErrorMessage } from '../infra/errors.js';
 import { config } from '../config/index.js';
-import path from 'node:path';
 
 /**
  * AgentRunner: Orchestrates the interaction between the Brain, Hands, and Memory.
@@ -37,7 +36,7 @@ export class AgentRunner {
     }
 
     async init() {
-        const skillsDir = path.join(process.cwd(), 'skills');
+        const skillsDir = config.skills.portableDir;
         const portableSkills = await PortableSkillLoader.loadDirectory(skillsDir);
 
         for (const route of portableSkills) {
@@ -338,7 +337,10 @@ Return only a valid JSON array of strings. No conversational text.`;
         onDelta: (text: string) => void,
         formatter: StreamingFormatter
     ): Promise<string> {
-        const combinedResults = results.map(r => `Action: "${r.action}"\nResult: ${r.result}`).join('\n\n');
+        const combinedResults = results.map(r => {
+            const resultStr = typeof r.result === 'string' ? r.result : JSON.stringify(r.result, null, 2);
+            return `Action: "${r.action}"\nResult: ${resultStr}`;
+        }).join('\n\n');
 
         const enhancedMessage = `The user asked: "${originalMessage}"
 I decomposed this into ${actions.length} step(s) and successfully executed ${results.length} of them:

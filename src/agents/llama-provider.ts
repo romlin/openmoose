@@ -159,6 +159,11 @@ export class LlamaProvider implements BrainProvider {
         };
     }
 
+    async warmup() {
+        logger.info('Warming up local brain...', 'Brain');
+        await this.ensureInitialized();
+    }
+
     private parseMessages(messages: OpenAIMessage[]) {
         const systemPrompt = messages.find(m => m.role === 'system')?.content || undefined;
         const lastUserIdx = messages.findLastIndex(m => m.role === 'user');

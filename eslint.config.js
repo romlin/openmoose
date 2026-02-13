@@ -5,7 +5,7 @@ export default tseslint.config(
     eslint.configs.recommended,
     ...tseslint.configs.recommended,
     {
-        ignores: ['dist/**', 'node_modules/**', 'models/**', 'src/runtime/browser/daemon.js'],
+        ignores: ['**/dist/**', '**/node_modules/**', '**/target/**', 'models/**', 'src/runtime/browser/daemon.js', '**/venv/**', '**/.moose/**'],
     },
     {
         rules: {

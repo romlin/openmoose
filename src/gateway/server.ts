@@ -12,6 +12,7 @@ import { LocalAudio } from '../infra/audio.js';
 import { LocalMemory } from '../infra/memory.js';
 import { LocalSandbox } from '../infra/sandbox.js';
 import { WhatsAppManager } from '../infra/whatsapp.js';
+import { HistoryManager } from '../infra/history.js';
 import { AgentRunner } from '../runtime/runner.js';
 import { SkillRegistry } from '../runtime/registry.js';
 import { loadSkillEntries, buildSkillsPrompt } from '../runtime/skill-loader.js';
@@ -30,7 +31,13 @@ import { getErrorMessage } from '../infra/errors.js';
 /** Zod schema for validating incoming WebSocket payloads. */
 const WsPayloadSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('agent.run'), message: z.string(), audio: z.boolean().optional() }),
+    z.object({ type: z.literal('agent.history'), limit: z.number().optional() }),
+    z.object({ type: z.literal('agent.history.clear') }),
+    z.object({ type: z.literal('agent.memory.list'), limit: z.number().optional(), source: z.enum(['chat', 'doc']).optional() }),
+    z.object({ type: z.literal('agent.memory.search'), query: z.string(), limit: z.number().optional(), source: z.enum(['chat', 'doc']).optional() }),
+    z.object({ type: z.literal('agent.memory.clear') }),
     z.object({ type: z.literal('whatsapp.send'), name: z.string(), text: z.string() }),
+    z.object({ type: z.literal('agent.system.info') }),
 ]);
 
 /**
@@ -50,6 +57,7 @@ export class LocalGateway {
     private skillRegistry = new SkillRegistry();
     private scheduler!: TaskScheduler;
     private whatsapp!: WhatsAppManager;
+    private history = new HistoryManager();
     private sessions = new Map<WebSocket, { role: 'user' | 'assistant', content: string }[]>();
     private whatsappSessions = new Map<string, { role: 'user' | 'assistant', content: string }[]>();
     private skillsPrompt = '';
@@ -117,6 +125,22 @@ export class LocalGateway {
                 ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
             }
             ws.send(JSON.stringify({ type: 'agent.final' }));
+        } else if (payload.type === 'agent.history') {
+            const history = await this.history.loadLast(payload.limit || 50);
+            ws.send(JSON.stringify({ type: 'agent.history.result', history }));
+        } else if (payload.type === 'agent.history.clear') {
+            await this.history.clear();
+            this.sessions.delete(ws);
+            ws.send(JSON.stringify({ type: 'agent.history.clear.result', success: true }));
+        } else if (payload.type === 'agent.memory.list') {
+            const memories = await this.memory.list(payload.limit || 100, payload.source);
+            ws.send(JSON.stringify({ type: 'agent.memory.list.result', memories }));
+        } else if (payload.type === 'agent.memory.search') {
+            const memories = await this.memory.search(payload.query, payload.limit || 50, payload.source);
+            ws.send(JSON.stringify({ type: 'agent.memory.search.result', memories }));
+        } else if (payload.type === 'agent.memory.clear') {
+            await this.memory.clear();
+            ws.send(JSON.stringify({ type: 'agent.memory.clear.result', success: true }));
         } else if (payload.type === 'whatsapp.send') {
             try {
                 const contact = await (await import('../infra/contacts.js')).ContactsManager.lookup(payload.name);
@@ -129,6 +153,41 @@ export class LocalGateway {
             } catch (err) {
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: String(err) }));
             }
+        } else if (payload.type === 'agent.system.info') {
+            const info = {
+                type: 'agent.system.info.result',
+                cpu: process.cpuUsage(),
+                memory: process.memoryUsage(),
+                uptime: process.uptime(),
+                platform: process.platform,
+                arch: process.arch,
+                version: process.version,
+                brain: {
+                    provider: config.brain.provider,
+                    model: getModelName(),
+                    gpu: config.brain.llamaCpp.gpu || 'none',
+                    status: await this.brain.healthCheck(),
+                },
+                skills: {
+                    builtin: this.skillRegistry.getAll().map(s => s.name),
+                    portable: await (async () => {
+                        const skillsDir = config.skills.portableDir;
+                        try {
+                            const files = await readdir(skillsDir);
+                            return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+                                .map(f => path.basename(f, path.extname(f)));
+                        } catch { return []; }
+                    })()
+                },
+                scheduler: {
+                    status: 'active',
+                    pollInterval: config.scheduler.pollIntervalMs
+                },
+                browser: {
+                    status: 'daemon active'
+                }
+            };
+            ws.send(JSON.stringify(info));
         }
     }
 
@@ -152,6 +211,10 @@ export class LocalGateway {
         { role: 'user' as const, content: message },
         { role: 'assistant' as const, content: fullResponse }
         ].slice(-config.gateway.maxHistoryLength);
+
+        // Persist to disk
+        await this.history.append('user', message);
+        await this.history.append('assistant', fullResponse);
 
         saveHistory(updatedHistory);
         return fullResponse;
@@ -188,9 +251,18 @@ export class LocalGateway {
 
         if (pid) {
             logger.info(`Process ID: ${pid}`, 'Gateway');
-            const shouldKill = await askConfirm(`Kill existing process and restart? (y/n): `);
+
+            // When running headlessly (e.g. spawned by the desktop app),
+            // auto-kill the stale gateway instead of prompting via stdin.
+            const isInteractive = process.stdin.isTTY === true;
+            const shouldKill = isInteractive
+                ? await askConfirm(`Kill existing process and restart? (y/n): `)
+                : true;
 
             if (shouldKill) {
+                if (!isInteractive) {
+                    logger.info(`Non-interactive mode: auto-killing process ${pid}`, 'Gateway');
+                }
                 if (killProcess(pid)) {
                     logger.success(`Killed process ${pid}`, 'Gateway');
                     await new Promise(r => setTimeout(r, config.gateway.portKillDelayMs));
@@ -220,7 +292,7 @@ export class LocalGateway {
     }
 
     private async initMemory() {
-        const docsDir = path.join(process.cwd(), 'docs');
+        const docsDir = path.join(config.mooseHome, 'docs');
         try { await this.memory.syncDocs(docsDir); } catch (err) {
             logger.error('Document sync failed', 'Gateway', err);
         }
@@ -231,13 +303,13 @@ export class LocalGateway {
         await this.skillRegistry.loadDefaults();
         await this.skillRegistry.loadExtensions(config.skills.customDir);
 
-        const skillsDir = path.join(process.cwd(), 'skills');
-        const skillEntries = await loadSkillEntries(skillsDir);
+        const portableDir = config.skills.portableDir;
+        const skillEntries = await loadSkillEntries(portableDir);
         this.skillsPrompt = buildSkillsPrompt(skillEntries);
 
         let yamlCount = 0;
         try {
-            const files = await readdir(skillsDir);
+            const files = await readdir(portableDir);
             yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
         } catch { /* skills dir may not exist */ }
 
@@ -249,7 +321,7 @@ export class LocalGateway {
     }
 
     private createScheduler() {
-        const dataDir = path.join(process.cwd(), '.moose/data');
+        const dataDir = path.join(config.mooseHome, 'data');
         this.scheduler = new TaskScheduler(dataDir, {
             pollInterval: config.scheduler.pollIntervalMs,
             onTaskRun: async (task) => {
@@ -271,6 +343,27 @@ export class LocalGateway {
             : `${config.brain.provider} · ${config.brain.llamaCpp.gpu} · ${modelName}`;
 
         printStatus('Brain', brainStatus);
+
+        // Async warmup with status broadcast
+        (async () => {
+            try {
+                this.broadcast({ type: 'brain.status', status: 'warming_up', message: 'Loading model into RAM...' });
+                await this.brain.warmup();
+                this.broadcast({ type: 'brain.status', status: 'ready', message: 'Brain is ready' });
+            } catch (err) {
+                logger.error('Warmup failed', 'Gateway', err);
+                this.broadcast({ type: 'brain.status', status: 'error', message: String(err) });
+            }
+        })();
+    }
+
+    private broadcast(payload: Record<string, unknown>) {
+        const msg = JSON.stringify(payload);
+        for (const client of this.wss.clients) {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(msg);
+            }
+        }
     }
 
     private async startScheduler() {

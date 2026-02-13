@@ -5,9 +5,21 @@
 
 import dotenv from 'dotenv';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 dotenv.config();
+
+const mooseHome = process.env.MOOSE_HOME || path.join(process.env.HOME || process.env.USERPROFILE || process.cwd(), '.moose');
+const configJsonPath = path.join(mooseHome, 'config.json');
+
+let jsonConfig: Record<string, unknown> = {};
+try {
+    if (existsSync(configJsonPath)) {
+        jsonConfig = JSON.parse(readFileSync(configJsonPath, 'utf-8'));
+    }
+} catch (err: unknown) {
+    console.warn(`[Config] Failed to read config.json at ${configJsonPath}:`, err);
+}
 
 const pkgPath = path.join(process.cwd(), 'package.json');
 let version = '0.0.0';
@@ -39,6 +51,10 @@ function validateGpu(raw: string | undefined): 'auto' | 'metal' | 'cuda' | 'vulk
 
 export const config = {
     version,
+    mooseHome,
+    /** Whether the initial setup wizard has been completed. */
+    setupComplete: !!jsonConfig.setup_complete,
+
     gateway: {
         port: Number(process.env.GATEWAY_PORT || 18789),
         /** Timeout for graceful cleanup on shutdown before forcing exit. */
@@ -54,7 +70,7 @@ export const config = {
             apiKey: process.env.MISTRAL_API_KEY,
         },
         llamaCpp: {
-            modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(process.cwd(), 'models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf'),
+            modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(mooseHome, 'models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf'),
             gpu: validateGpu(process.env.LLAMA_CPP_GPU),
         }
     },
@@ -78,30 +94,31 @@ export const config = {
     skills: {
         /** Execution timeout for portable YAML skills (ms). */
         timeoutMs: 30_000,
-        customDir: path.join(process.cwd(), 'skills/custom'),
+        customDir: path.join(mooseHome, 'skills/custom'),
+        portableDir: process.env.PORTABLE_SKILLS_DIR || path.join(process.cwd(), 'skills'),
     },
 
     audio: {
-        modelDir: path.join(process.cwd(), 'models/supertonic/onnx'),
-        voiceStyle: path.join(process.cwd(), 'models/supertonic/voice_styles/M1.json'),
+        modelDir: path.join(mooseHome, 'models/audio/onnx'),
+        voiceStyle: path.join(mooseHome, 'models/audio/voice_styles/M1.json'),
         lang: process.env.TTS_LANG || 'en',
         totalSteps: parseInt(process.env.TTS_STEPS || '2', 10),
         speed: parseFloat(process.env.TTS_SPEED || '1.05'),
     },
 
     memory: {
-        dbPath: process.env.MEMORY_DB_PATH || '.moose/memory',
+        dbPath: process.env.MEMORY_DB_PATH || path.join(mooseHome, 'memory'),
     },
 
     whatsapp: {
-        authDir: path.join(process.cwd(), '.moose/data', 'whatsapp-auth'),
-        contactsPath: path.join(process.cwd(), '.moose/data', 'contacts.json'),
+        authDir: path.join(mooseHome, 'data/whatsapp-auth'),
+        contactsPath: path.join(mooseHome, 'data/contacts.json'),
         reconnectDelayMs: 5_000,
     },
 
     sandbox: {
-        profileDir: process.env.BROWSER_PROFILE_DIR || path.join(process.cwd(), '.moose/data', 'browser-profiles'),
-        previewsDir: path.join(process.cwd(), '.moose/data', 'browser-previews'),
+        profileDir: process.env.BROWSER_PROFILE_DIR || path.join(mooseHome, 'data/browser-profiles'),
+        previewsDir: path.join(mooseHome, 'data/browser-previews'),
         defaultImage: 'python:3.12-slim',
         playwrightImage: 'mcr.microsoft.com/playwright:v1.58.0-noble',
         defaultTimeoutMs: 30_000,

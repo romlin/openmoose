@@ -6,9 +6,21 @@
 
 **The local-first AI assistant that doesn't charge you by the antler.**
 
+> "Yes, there is a hardened Docker sandbox and a Ministral-14B brain inside this, but it's a tool for humans, built by humans, to be used in real life."
+
 OpenMoose is a privacy-first AI assistant that runs entirely on your machine. It combines semantic intent routing, local vector memory, sandboxed code execution, and WhatsApp integration into a single gateway you control.
 
-## TL;DR
+## Desktop App (Recommended)
+
+The easiest way to use OpenMoose is through our native desktop application, which includes an automated **Setup Wizard**--no terminal required.
+
+1. **Download**: Grab the latest release for your OS (.dmg, .exe, or .AppImage).
+2. **Launch**: Follow the "Setup Wizard" to download your local brain and pair WhatsApp.
+3. **Chat**: Start talking to the Moose instantly.
+
+The desktop app is a [Tauri](https://tauri.app) application (Rust backend + React frontend) that spawns and manages the same gateway the CLI uses. Everything stays local.
+
+## Developer Setup (Terminal)
 
 ```bash
 git clone https://github.com/OpenMoose/openmoose.git && cd openmoose
@@ -41,6 +53,32 @@ Local LLM via node-llama-cpp. Sandboxed code execution. Vector memory. WhatsApp.
 | [git-lfs](https://git-lfs.com) | Latest | TTS model download |
 | [pnpm](https://pnpm.io) | Latest | Package manager |
 | [CMake](https://cmake.org) | >= 3.10 | Required for GPU build (Linux) |
+| [Rust](https://rustup.rs) | Latest | Required for Desktop App (`app/`) |
+
+### Desktop App (Tauri) System Dependencies
+
+If you want to build or run the desktop application in `app/`, you need the native Tauri dependencies:
+
+**macOS**
+```bash
+xcode-select --install
+```
+
+**Linux (Ubuntu/Debian)**
+```bash
+sudo apt-get update && sudo apt-get install -y \
+  libgtk-3-dev \
+  libwebkit2gtk-4.1-dev \
+  librsvg2-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  libjavascriptcoregtk-4.1-dev \
+  libsoup-3.0-dev
+```
 
 ## Hardware Acceleration (NVIDIA/CUDA)
 
@@ -106,6 +144,111 @@ docker compose up -d
 ```
 
 The gateway will be accessible at `http://localhost:18789`. Your models and vector data are persisted in `./models` and `./.moose`.
+
+## Desktop App Development
+
+The desktop app lives in `app/` and is a **pnpm workspace** member. It is a Tauri v2 application with a React + TypeScript frontend and a Rust backend. The app does not re-implement any AI logic -- it spawns and connects to the **real** gateway process (`pnpm run gateway`) over WebSocket.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────┐
+│  Tauri App                                      │
+│  ┌──────────────┐    ┌────────────────────────┐ │
+│  │ Rust Backend  │───▶│ spawns: pnpm gateway   │ │
+│  │ (lib.rs)      │    │ (real LocalGateway)    │ │
+│  └──────┬───────┘    └────────────────────────┘ │
+│         │ IPC                    ▲               │
+│  ┌──────▼───────┐     WebSocket │               │
+│  │ React UI     │───────────────┘               │
+│  │ (App.tsx)    │    port 18789                  │
+│  └──────────────┘                               │
+└─────────────────────────────────────────────────┘
+```
+
+**Rust backend** (`app/src-tauri/src/lib.rs`) handles:
+- Model download (resumable, with progress events)
+- Gateway process lifecycle (start/stop)
+- Docker availability check
+- Config management (`~/.moose/config.json`, read-modify-write to preserve gateway fields)
+
+**React frontend** (`app/src/`) handles:
+- Setup wizard (Docker check, model download, first-run)
+- Chat interface with streaming responses
+- Memory browser with search and filters
+- Debug panel (system info, brain status, skill registry)
+
+### Running the App
+
+```bash
+# From the repo root -- install all workspace dependencies
+pnpm install
+
+# Start the app in development mode (opens the Tauri window)
+cd app
+pnpm tauri dev
+```
+
+This starts the Vite dev server on `http://localhost:1420` and opens the Tauri window. The Rust backend auto-starts the gateway if setup has been completed previously.
+
+### Building the App
+
+```bash
+cd app
+pnpm tauri build
+```
+
+Produces a native installer in `app/src-tauri/target/release/bundle/`.
+
+### App Tests
+
+```bash
+# Frontend unit tests (React components + utilities)
+cd app
+pnpm test
+
+# Rust unit tests
+cd app/src-tauri
+cargo test
+```
+
+### App Project Structure
+
+```
+app/
+├── src/                    React frontend
+│   ├── App.tsx             Main component (state, WebSocket, routing)
+│   ├── components/
+│   │   ├── Chat.tsx        Chat interface with markdown + streaming
+│   │   ├── Sidebar.tsx     Navigation sidebar
+│   │   ├── MemoryView.tsx  Memory browser with search/filter
+│   │   ├── DebugView.tsx   System info and diagnostics
+│   │   ├── PageHeader.tsx  Reusable header component
+│   │   └── SetupWizard.tsx First-run setup flow
+│   └── lib/
+│       ├── types.ts        Shared TypeScript types
+│       └── utils.ts        Shared utilities (formatBytes, etc.)
+├── src-tauri/              Rust backend
+│   ├── src/lib.rs          Tauri commands (gateway, model, config)
+│   ├── tauri.conf.json     App window and build configuration
+│   ├── capabilities/       Tauri security permissions
+│   └── Cargo.toml          Rust dependencies
+├── package.json            Frontend dependencies and scripts
+├── vite.config.ts          Vite + Vitest configuration
+└── tsconfig.json           TypeScript configuration
+```
+
+### Shared State
+
+The app and gateway share state through:
+
+| Resource | Location | Owner |
+|---|---|---|
+| Config | `~/.moose/config.json` | Both (app uses read-modify-write) |
+| Model | `~/.moose/models/llama-cpp/*.gguf` | App downloads, gateway loads |
+| Memory DB | `~/.moose/memory/` | Gateway |
+| Chat history | `~/.moose/data/history.jsonl` | Gateway |
+| Gateway port | `GATEWAY_PORT` env or `18789` | Both read the same default |
 
 ## Usage
 
@@ -232,7 +375,8 @@ The LLM has access to these tools for complex tasks:
 
 ```mermaid
 graph TD
-    INPUT[CLI / WhatsApp / HTTP] --> GW[Gateway]
+    APP[Desktop App] --> GW
+    CLI[CLI / WhatsApp / HTTP] --> GW[Gateway]
     GW --> ROUTER{Semantic Router}
 
     ROUTER -->|direct match| SKILLS[Skill Registry]
@@ -250,26 +394,51 @@ graph TD
     classDef hub fill:#2563eb,stroke:#1d4ed8,color:#fff
     classDef decision fill:#f59e0b,stroke:#d97706,color:#000
     classDef node fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef app fill:#10b981,stroke:#059669,color:#fff
 
     class GW,RUNNER hub
     class ROUTER decision
-    class INPUT,BRAIN,MEM,SKILLS,TTS,SBX,HOST node
+    class CLI,BRAIN,MEM,SKILLS,TTS,SBX,HOST node
+    class APP app
 ```
 
 ### Project Structure
 
 ```
-src/
-├── gateway/        Central HTTP/WebSocket server
-├── agents/         LLM brain and prompt construction
-├── runtime/        Skill registry, runner, router, scheduler
-│   └── skills/     Dynamic plugins (builtins & custom)
-├── infra/          Memory, sandbox, audio, WhatsApp, logging
-├── cli/            Command-line interface
-└── config/         Centralized configuration
-skills/             YAML-based portable skill definitions
-models/             TTS model files (Supertonic 2)
-docs/               Markdown documents indexed into memory
+openmoose/
+├── src/                    Gateway and core logic
+│   ├── gateway/            Central HTTP/WebSocket server
+│   ├── agents/             LLM brain and prompt construction
+│   ├── runtime/            Skill registry, runner, router, scheduler
+│   │   └── skills/         Dynamic plugins (builtins & custom)
+│   ├── infra/              Memory, sandbox, audio, WhatsApp, logging
+│   ├── cli/                Command-line interface
+│   └── config/             Centralized configuration
+├── app/                    Desktop application (Tauri + React)
+│   ├── src/                React frontend
+│   └── src-tauri/          Rust backend
+├── skills/                 YAML-based portable skill definitions
+├── models/                 TTS model files (Supertonic 2)
+├── docs/                   Markdown documents indexed into memory
+├── tools/                  Build and release tooling
+├── vitest.config.ts        Root test configuration
+└── pnpm-workspace.yaml     Monorepo workspace definition
+```
+
+## Testing
+
+```bash
+# Run all gateway/core tests (270 tests)
+pnpm test
+
+# Run app frontend tests (38 tests)
+cd app && pnpm test
+
+# Run app Rust tests (3 tests)
+cd app/src-tauri && cargo test
+
+# Run with coverage
+pnpm test:coverage
 ```
 
 ## Security
@@ -293,12 +462,12 @@ OpenMoose is a developer-first tool. For production-grade or multi-tenant deploy
 - **Docker Socket Risk**: The gateway requires access to the Docker daemon. In standard configurations, this grants the Node.js process the same privileges as the `docker` group. For high-risk environments, we recommend running in **Rootless Docker** or **Podman**.
 - **Upstream SHA Pinning**: By default, we use semantic tags (e.g., `python:3.12-slim`). For immutable supply-chain security, we recommend pinning Docker images by SHA256 digest in your local `.env`.
 - **Tmpfs Capping**: All sandbox temporary storage is capped at **64MB** to prevent RAM exhaustion on the host machine.
-- **Taxonomy**: Whether you call it an **OpenMoose** or a **Titanium Elk**, the security primitives remain identical.
+- **Taxonomy**: The security primitives remain identical across all deployment modes.
 
-## Transparency & FAQ
+---
 
 **Why the Gateway?** 
-The Gateway is a central "brain" that allows multiple clients (WhatsApp, CLI, Web) to share the same local LLM context and memory. It is the core of the multi-device experience.
+The Gateway is a central "brain" that allows multiple clients (WhatsApp, CLI, Desktop App, Web) to share the same local LLM context and memory. It is the core of the multi-device experience.
 
 **Can I run without the Gateway?**
 Yes. For pure local testing or "one-off" chats, you can use the standalone CLI:
@@ -319,6 +488,8 @@ OpenMoose does not phone home. However, if a skill command includes a URL (e.g.,
 
 ## Scripts
 
+### Gateway & CLI
+
 | Script | Description |
 |---|---|
 | `pnpm gateway` | Start the gateway server |
@@ -330,6 +501,17 @@ OpenMoose does not phone home. However, if a skill command includes a URL (e.g.,
 | `pnpm test` | Run tests with Vitest |
 | `./setup.sh` | Full environment setup |
 | `./reset.sh` | Wipe vector memory |
+
+### Desktop App (`app/`)
+
+| Script | Description |
+|---|---|
+| `pnpm tauri dev` | Start app in development mode |
+| `pnpm tauri build` | Build native installer |
+| `pnpm dev` | Start Vite dev server only (no Tauri) |
+| `pnpm build` | Compile TypeScript + Vite build |
+| `pnpm test` | Run frontend unit tests |
+| `cargo test` | Run Rust unit tests (from `src-tauri/`) |
 
 ## License
 
@@ -367,6 +549,15 @@ OpenMoose is built on these open-source projects and models:
 | [ws](https://github.com/websockets/ws) | MIT | Yes | WebSocket server |
 | [Zod](https://zod.dev) | MIT | Yes | Schema validation |
 
+### Desktop App Dependencies
+
+| Package | License | Commercial | Description |
+|---|---|---|---|
+| [Tauri](https://tauri.app) | MIT | Yes | Native app framework (Rust) |
+| [React](https://react.dev) | MIT | Yes | UI framework |
+| [Lucide React](https://lucide.dev) | ISC | Yes | Icon library |
+| [Vite](https://vite.dev) | MIT | Yes | Build tool |
+
 ### Models
 
 | Model | License | Commercial | Description |
@@ -383,7 +574,6 @@ OpenMoose is built on these open-source projects and models:
 | [tsx](https://github.com/privatenumber/tsx) | MIT | Yes | TypeScript execution |
 | [TypeScript](https://www.typescriptlang.org) | Apache-2.0 | Yes | Language |
 | [Vitest](https://vitest.dev) | MIT | Yes | Test framework |
+| [Testing Library](https://testing-library.com) | MIT | Yes | React component testing |
 
 ---
-
-*Built with pride by the OpenMoose contributors.*

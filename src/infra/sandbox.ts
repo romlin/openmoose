@@ -39,80 +39,51 @@ export class LocalSandbox {
   }
 
   /**
-   * Internal runner to keep the code DRY across different languages.
+   * Internal wrapper for child_process.spawn that handles output buffering,
+   * timeouts, and cleanup.
    */
-  private async execute(command: string, options: SandboxOptions = {}): Promise<SandboxResult> {
-    const {
-      image = config.sandbox.defaultImage,
-      timeout = config.sandbox.defaultTimeoutMs,
-      memory = config.sandbox.defaultMemory,
-      cpus = config.sandbox.defaultCpus,
-      network,
-      readonlyWorkspace = true,
-    } = options;
-
-    const isPlaywright = image.includes('playwright');
-
-    const args = [
-      'run', '--rm',
-      '--name', this.containerName,
-      '--network', network || 'bridge',
-      '--memory', memory,
-      '--cpus', String(cpus),
-      '--read-only',
-      '--tmpfs', '/tmp:size=64m',
-      '--user', '1000:1000',
-      '--security-opt', 'no-new-privileges',
-      '--pids-limit', '50',
-      '--label', 'com.openmoose.app=true',
-      '--label', 'com.openmoose.version=1',
-      '--label', `com.openmoose.container_id=${this.containerName}`,
-    ];
-
-    if (isPlaywright) {
-      // Playwright needs SYS_ADMIN for Chromium's sandbox
-      args.push('--cap-add', 'SYS_ADMIN');
-
-      // Mount browser profiles only for browser containers
-      const profileDir = config.sandbox.profileDir;
-      args.push('-v', `${profileDir}:/root/.config/google-chrome:ro`);
-      args.push('-v', `${profileDir}:/root/.mozilla:ro`);
-    } else {
-      // Non-browser containers: drop dangerous capabilities, keep basic ones
-      args.push(
-        '--cap-drop', 'NET_RAW',
-        '--cap-drop', 'MKNOD',
-        '--cap-drop', 'AUDIT_WRITE',
-        '--cap-drop', 'NET_BIND_SERVICE',
-        '--cap-drop', 'SYS_CHROOT',
-      );
+  private async managedSpawn(
+    binary: string,
+    args: string[],
+    options: {
+      timeout: number;
+      cwd?: string;
+      code?: string;
+      onTimeout?: () => void;
+      errorPrefix?: string;
     }
-
-    if (options.workspacePath) {
-      const mode = readonlyWorkspace ? ':ro' : '';
-      args.push('-v', `${options.workspacePath}:/workspace${mode}`);
-      args.push('--workdir', '/workspace');
-    }
-
-    args.push(image, 'sh', '-c', command);
-
+  ): Promise<SandboxResult> {
     return new Promise((resolve) => {
-      const child = spawn('docker', args);
+      const child = spawn(binary, args, {
+        stdio: options.code ? ['pipe', 'pipe', 'pipe'] : ['inherit', 'pipe', 'pipe'],
+        cwd: options.cwd || process.cwd(),
+      });
+
       let stdout = '';
       let stderr = '';
+
       const timer = setTimeout(() => {
-        spawn('docker', ['kill', this.containerName]).on('error', () => { /* fire and forget */ });
+        if (options.onTimeout) {
+          options.onTimeout();
+        } else {
+          child.kill();
+        }
         resolve({
           stdout: stdout.trim(),
-          stderr: (stderr + '\n[Security] Error: Timeout reached.').trim(),
-          exitCode: 124 // Timeout exit code
+          stderr: (stderr + `\n${options.errorPrefix || '[Error]'} Timeout reached.`).trim(),
+          exitCode: 124
         });
-      }, timeout);
+      }, options.timeout);
 
-      child.stdout.on('data', (d) => {
+      if (options.code && child.stdin) {
+        child.stdin.write(options.code);
+        child.stdin.end();
+      }
+
+      child.stdout?.on('data', (d) => {
         if (stdout.length < MAX_OUTPUT_BYTES) stdout += d;
       });
-      child.stderr.on('data', (d) => {
+      child.stderr?.on('data', (d) => {
         if (stderr.length < MAX_OUTPUT_BYTES) stderr += d;
       });
 
@@ -120,21 +91,34 @@ export class LocalSandbox {
         clearTimeout(timer);
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 });
       });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({
+          stdout: stdout.trim(),
+          stderr: (stderr + `\n${options.errorPrefix || '[Error]'} Spawn failed: ${err.message}`).trim(),
+          exitCode: 1
+        });
+      });
     });
   }
 
   /**
-   * Generalized language runner using stdin to avoid shell escaping issues.
+   * Internal helper to generate common Docker CLI arguments.
    */
-  private async runLanguage(image: string, cmd: string, code: string, options: SandboxOptions = {}) {
-    const isPlaywright = image.includes('playwright');
-    const memory = options.memory || config.sandbox.defaultMemory;
-    const cpus = options.cpus || config.sandbox.defaultCpus;
+  private getCommonDockerArgs(options: SandboxOptions, interactive: boolean): string[] {
+    const {
+      image = config.sandbox.defaultImage,
+      memory = config.sandbox.defaultMemory,
+      cpus = config.sandbox.defaultCpus,
+      network,
+    } = options;
 
+    const isPlaywright = image.includes('playwright');
     const args = [
-      'run', '--rm', '--interactive',
+      'run', '--rm',
       '--name', this.containerName,
-      '--network', options.network || 'bridge',
+      '--network', network || 'bridge',
       '--memory', memory,
       '--cpus', String(cpus),
       '--read-only',
@@ -147,19 +131,16 @@ export class LocalSandbox {
       '--label', `com.openmoose.container_id=${this.containerName}`,
     ];
 
+    if (interactive) {
+      args.splice(2, 0, '--interactive');
+    }
+
     if (isPlaywright) {
       args.push('--cap-add', 'SYS_ADMIN');
       const profileDir = config.sandbox.profileDir;
-      args.push('-v', `${profileDir}:/root/.config/google-chrome:ro`);
-      args.push('-v', `${profileDir}:/root/.mozilla:ro`);
+      args.push('-v', `${profileDir}:/root/.config/google-chrome:ro`, '-v', `${profileDir}:/root/.mozilla:ro`);
     } else {
-      args.push(
-        '--cap-drop', 'NET_RAW',
-        '--cap-drop', 'MKNOD',
-        '--cap-drop', 'AUDIT_WRITE',
-        '--cap-drop', 'NET_BIND_SERVICE',
-        '--cap-drop', 'SYS_CHROOT',
-      );
+      args.push('--cap-drop', 'NET_RAW', '--cap-drop', 'MKNOD', '--cap-drop', 'AUDIT_WRITE', '--cap-drop', 'NET_BIND_SERVICE', '--cap-drop', 'SYS_CHROOT');
     }
 
     if (options.workspacePath) {
@@ -168,45 +149,53 @@ export class LocalSandbox {
       args.push('--workdir', '/workspace');
     }
 
-    args.push(image, 'sh', '-c', `${cmd} -`);
-    // ... rest of method ...
+    return args;
+  }
 
-    return new Promise<SandboxResult>((resolve) => {
-      // Titanium Elk Hardening: Use stdio: ['pipe', ...] to enable Stdin Piping.
-      // This provides 100% immunity to CLI-based shell injection and bypasses
-      // arg_max limits by streaming code directly into the runtime's stdin.
-      const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
-      let stdout = '';
-      let stderr = '';
+  /**
+   * Internal runner for shell commands.
+   */
+  private async execute(command: string, options: SandboxOptions = {}): Promise<SandboxResult> {
+    const {
+      image = config.sandbox.defaultImage,
+      timeout = config.sandbox.defaultTimeoutMs,
+    } = options;
 
-      const timeout = options.timeout || config.sandbox.defaultTimeoutMs;
-      const timer = setTimeout(() => {
+    const args = [...this.getCommonDockerArgs(options, false), image, 'sh', '-c', command];
+
+    return this.managedSpawn('docker', args, {
+      timeout,
+      errorPrefix: '[Security]',
+      onTimeout: () => {
         spawn('docker', ['kill', this.containerName]).on('error', () => { });
-        resolve({ stdout, stderr: stderr + '\n[Security] Timeout', exitCode: 124 });
-      }, timeout);
-
-      // Pipe the code via stdin
-      if (child.stdin) {
-        child.stdin.write(code);
-        child.stdin.end();
       }
-
-      child.stdout.on('data', d => { if (stdout.length < MAX_OUTPUT_BYTES) stdout += d; });
-      child.stderr.on('data', d => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += d; });
-
-      child.on('close', code => {
-        clearTimeout(timer);
-        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 });
-      });
     });
   }
+
+  /**
+   * Generalized language runner using stdin to avoid shell escaping issues.
+   */
+  private async runLanguage(image: string, cmd: string, code: string, options: SandboxOptions = {}) {
+    const { timeout = config.sandbox.defaultTimeoutMs } = options;
+    const args = [...this.getCommonDockerArgs(options, true), image, 'sh', '-c', `${cmd} -`];
+
+    return this.managedSpawn('docker', args, {
+      timeout,
+      code,
+      errorPrefix: '[Security]',
+      onTimeout: () => {
+        spawn('docker', ['kill', this.containerName]).on('error', () => { });
+      }
+    });
+  }
+
 
   /** Run an arbitrary shell command in a sandboxed container. */
   async run(command: string, options: SandboxOptions = {}) {
     return this.execute(command, options);
   }
 
-  /** Execute Python 3.12 code in a sandboxed container. */
+  /** Execute Python code in a sandboxed container. */
   async runPython(code: string, options: SandboxOptions = {}) {
     return this.runLanguage('python:3.12-slim', 'python3', code, options);
   }

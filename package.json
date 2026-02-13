@@ -1,7 +1,7 @@
 {
   "name": "openmoose",
   "version": "0.1.1",
-  "description": "OpenMoose: The local-first AI assistant that doesn’t charge you by the antler.",
+  "description": "OpenMoose: A privacy-first, local-first AI assistant gateway.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -34,22 +34,24 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:linux": "bash build-linux.sh"
   },
   "dependencies": {
     "@hapi/boom": "10.0.1",
     "@hono/node-server": "1.19.9",
-    "@huggingface/transformers": "^3.8.1",
-    "@lancedb/lancedb": "0.24.1",
+    "@huggingface/transformers": "3.8.1",
+    "@lancedb/lancedb": "0.26.2",
     "@whiskeysockets/baileys": "7.0.0-rc.9",
     "apache-arrow": "18.1.0",
     "chalk": "5.6.2",
     "commander": "14.0.3",
     "cron-parser": "5.5.0",
-    "dotenv": "17.2.4",
+    "dotenv": "17.3.0",
     "hono": "4.11.8",
     "js-yaml": "4.1.1",
-    "node-llama-cpp": "^3.15.1",
+    "node-llama-cpp": "3.15.1",
+    "onnxruntime-common": "1.21.0",
     "onnxruntime-node": "1.21.0",
     "ora": "9.3.0",
     "pino": "10.3.0",
@@ -59,23 +61,25 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.2",
+    "@eslint/js": "9.21.0",
     "@types/js-yaml": "4.0.9",
     "@types/node": "25.2.1",
     "@types/qrcode": "1.5.6",
     "@types/ws": "8.18.1",
-    "@typescript-eslint/eslint-plugin": "8.54.0",
-    "@typescript-eslint/parser": "8.54.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "eslint": "9.39.2",
+    "@typescript-eslint/eslint-plugin": "8.24.1",
+    "@typescript-eslint/parser": "8.24.1",
+    "@vitest/coverage-v8": "4.0.18",
+    "eslint": "9.21.0",
     "tsx": "4.21.0",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.54.0",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.24.1",
     "vitest": "4.0.18"
   },
   "pnpm": {
     "overrides": {
-      "tar": ">=7.5.7"
+      "tar": ">=7.5.7",
+      "onnxruntime-node": "1.21.0",
+      "onnxruntime-common": "1.21.0"
     }
   }
 }
