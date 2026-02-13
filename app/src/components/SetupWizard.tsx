@@ -30,7 +30,7 @@ export function SetupWizard({
         if (step === 3 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
             onStartDownload();
         }
-    }, [step, dockerStatus, isDownloading, onStartDownload, downloadProgress]);
+    }, [step, dockerStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
 
     const checkDocker = async () => {
         setDockerStatus("checking");

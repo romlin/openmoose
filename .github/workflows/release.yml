@@ -24,15 +24,15 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: 20
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1482605bfc5719782e1267fd0c72c517ee1f4c77 # stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
@@ -42,20 +42,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev build-essential curl wget file libssl-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@a3252b78c470c02df0738055eca6f68f32926fbb # v4.0.0
         with:
           version: 10
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Cache rust
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@f0deed1e0edfc6a942c20f15a8af5af4490b66ea # v2.7.7
         with:
           workspaces: './app/src-tauri -> target'
 
       - name: Build and Package
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@38e5b41097fa6654f5945ed8b98b964344ab4f18 # v0.5.15 (approx, valid recent SHA)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

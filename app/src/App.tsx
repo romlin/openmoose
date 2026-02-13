@@ -231,7 +231,24 @@ function App() {
   const handleClearMemory = () => {
     if (confirm("DANGER: This will permanently NUKE all long-term memories. Continue?")) {
       wsSend({ type: "agent.memory.clear" });
-      wsSend({ type: "agent.memory.list" });
+
+      // Wait for result before refreshing list
+      const tempListener = (event: MessageEvent) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "agent.memory.clear.result") {
+            wsSend({ type: "agent.memory.list" });
+            ws?.removeEventListener('message', tempListener);
+          }
+        } catch {
+          // ignore parsing errors in temp listener
+        }
+      };
+
+      ws?.addEventListener('message', tempListener);
+
+      // Safety cleanup after 5s if no response
+      setTimeout(() => ws?.removeEventListener('message', tempListener), 5000);
     }
   };
 

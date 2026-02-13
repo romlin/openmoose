@@ -5,7 +5,7 @@ import { Chat } from "./Chat";
 describe("Chat", () => {
     it("renders messages correctly", () => {
         const messages = [
-            { id: 1, role: "moose" as const, content: "Hello" },
+            { id: 1, role: "assistant" as const, content: "Hello" },
             { id: 2, role: "user" as const, content: "Hi" }
         ];
         render(<Chat messages={messages} onSend={() => { }} isThinking={false} onMenuToggle={() => { }} />);

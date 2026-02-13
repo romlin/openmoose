@@ -44,16 +44,16 @@ fn default_theme() -> String {
     "dark".to_string()
 }
 
-fn get_moose_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn get_moose_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
     Ok(home.join(".moose"))
 }
 
-fn get_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn get_config_path<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     Ok(get_moose_dir(app)?.join("config.json"))
 }
 
-fn get_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn get_model_path<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     Ok(get_moose_dir(app)?.join(format!("models/llama-cpp/{}", MODEL_FILENAME)))
 }
 

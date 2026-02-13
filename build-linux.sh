@@ -3,8 +3,6 @@ set -e
 
 echo "Starting OpenMoose Linux Build..."
 
-# 1. Install system dependencies if needed
-echo "Checking system dependencies..."
 sudo apt-get update
 sudo apt-get install -y \
   libgtk-3-dev \
@@ -17,7 +15,8 @@ sudo apt-get install -y \
   libssl-dev \
   libayatana-appindicator3-dev \
   libjavascriptcoregtk-4.1-dev \
-  libsoup-3.0-dev
+  libsoup-3.0-dev \
+  libfuse2
 
 # 2. Build the Gateway first
 echo "Building AI Gateway..."
@@ -33,3 +32,4 @@ echo "Build Complete!"
 echo "Your Linux binaries are located in: app/src-tauri/target/release/bundle/"
 echo "   - .AppImage (Portable)"
 echo "   - .deb (Debian/Ubuntu Installer)"
+echo "   - .rpm (RedHat/Fedora Installer)"

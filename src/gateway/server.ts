@@ -154,6 +154,15 @@ export class LocalGateway {
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: String(err) }));
             }
         } else if (payload.type === 'agent.system.info') {
+            // Security: Only allow system info from localhost
+            const remoteAddress = (ws as any)._socket?.remoteAddress || '';
+            const isLocal = remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1';
+
+            if (!isLocal) {
+                ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: System info only available to local clients.' }));
+                return;
+            }
+
             const info = {
                 type: 'agent.system.info.result',
                 cpu: process.cpuUsage(),

@@ -127,7 +127,7 @@ export function Chat({ messages, onSend, isThinking, isDownloading, downloadProg
                         </div>
                         {brainStatus === "warming_up"
                             ? "Loading 12GB local brain into RAM..."
-                            : (messages[messages.length - 1]?.role === "moose" ? "Moose is writing..." : "Moose is thinking...")}
+                            : (messages[messages.length - 1]?.role === "assistant" ? "Moose is writing..." : "Moose is thinking...")}
                     </div>
                 )}
             </div>
