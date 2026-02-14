@@ -36,6 +36,12 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Cache Rust
+        uses: swatinem/rust-cache@23bce308613e00260efafb090101caad819859cd # v2.7.3
+        with:
+          # Match the project structure
+          workspaces: './app/src-tauri -> target'
+
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: pnpm setup:linux

@@ -116,41 +116,41 @@ export class LocalGateway {
 
         const payload = parsed.data;
 
-        if (payload.type === 'agent.run') {
-            const response = await this._processAgentRequest(
-                payload.message,
-                this.sessions.get(ws) || [],
-                (history) => this.sessions.set(ws, history),
-                {
-                    onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
-                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
-                    onToolResult: (payload) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...payload }))
-                }
-            );
+        try {
+            if (payload.type === 'agent.run') {
+                const response = await this._processAgentRequest(
+                    payload.message,
+                    this.sessions.get(ws) || [],
+                    (history) => this.sessions.set(ws, history),
+                    {
+                        onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
+                        onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
+                        onToolResult: (p) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...p }))
+                    }
+                );
 
-            if (payload.audio && response) {
-                const audioBuffer = await this.audio.generateWav(response);
-                ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
-            }
-            ws.send(JSON.stringify({ type: 'agent.final' }));
-        } else if (payload.type === 'agent.history') {
-            const history = await this.history.loadLast(payload.limit || 50);
-            ws.send(JSON.stringify({ type: 'agent.history.result', history }));
-        } else if (payload.type === 'agent.history.clear') {
-            await this.history.clear();
-            this.sessions.delete(ws);
-            ws.send(JSON.stringify({ type: 'agent.history.clear.result', success: true }));
-        } else if (payload.type === 'agent.memory.list') {
-            const memories = await this.memory.list(payload.limit || 100, payload.source);
-            ws.send(JSON.stringify({ type: 'agent.memory.list.result', memories }));
-        } else if (payload.type === 'agent.memory.search') {
-            const memories = await this.memory.search(payload.query, payload.limit || 50, payload.source);
-            ws.send(JSON.stringify({ type: 'agent.memory.search.result', memories }));
-        } else if (payload.type === 'agent.memory.clear') {
-            await this.memory.clear();
-            ws.send(JSON.stringify({ type: 'agent.memory.clear.result', success: true }));
-        } else if (payload.type === 'whatsapp.send') {
-            try {
+                if (payload.audio && response) {
+                    const audioBuffer = await this.audio.generateWav(response);
+                    ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
+                }
+                ws.send(JSON.stringify({ type: 'agent.final' }));
+            } else if (payload.type === 'agent.history') {
+                const history = await this.history.loadLast(payload.limit || 50);
+                ws.send(JSON.stringify({ type: 'agent.history.result', history }));
+            } else if (payload.type === 'agent.history.clear') {
+                await this.history.clear();
+                this.sessions.delete(ws);
+                ws.send(JSON.stringify({ type: 'agent.history.clear.result', success: true }));
+            } else if (payload.type === 'agent.memory.list') {
+                const memories = await this.memory.list(payload.limit || 100, payload.source);
+                ws.send(JSON.stringify({ type: 'agent.memory.list.result', memories }));
+            } else if (payload.type === 'agent.memory.search') {
+                const memories = await this.memory.search(payload.query, payload.limit || 50, payload.source);
+                ws.send(JSON.stringify({ type: 'agent.memory.search.result', memories }));
+            } else if (payload.type === 'agent.memory.clear') {
+                await this.memory.clear();
+                ws.send(JSON.stringify({ type: 'agent.memory.clear.result', success: true }));
+            } else if (payload.type === 'whatsapp.send') {
                 const contact = await (await import('../infra/contacts.js')).ContactsManager.lookup(payload.name);
                 if (!contact) {
                     ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: `Contact ${payload.name} not found` }));
@@ -158,44 +158,51 @@ export class LocalGateway {
                 }
                 await this.whatsapp.sendMessage(contact.jid, payload.text);
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: true, message: `Message sent to ${contact.name}` }));
-            } catch (err) {
-                ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: String(err) }));
-            }
-        } else if (payload.type === 'agent.system.info') {
-            const info = {
-                type: 'agent.system.info.result',
-                cpu: process.cpuUsage(),
-                memory: process.memoryUsage(),
-                uptime: process.uptime(),
-                platform: process.platform,
-                arch: process.arch,
-                version: process.version,
-                brain: {
-                    provider: config.brain.provider,
-                    model: getModelName(),
-                    gpu: config.brain.llamaCpp.gpu || 'none',
-                    status: await this.brain.healthCheck(),
-                },
-                skills: {
-                    builtin: this.skillRegistry.getAll().map(s => s.name),
-                    portable: await (async () => {
-                        const skillsDir = config.skills.portableDir;
-                        try {
-                            const files = await readdir(skillsDir);
-                            return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
-                                .map(f => path.basename(f, path.extname(f)));
-                        } catch { return []; }
-                    })()
-                },
-                scheduler: {
-                    status: 'active',
-                    pollInterval: config.scheduler.pollIntervalMs
-                },
-                browser: {
-                    status: 'daemon active'
+            } else if (payload.type === 'agent.system.info') {
+                try {
+                    const info = {
+                        type: 'agent.system.info.result',
+                        cpu: process.cpuUsage(),
+                        memory: process.memoryUsage(),
+                        uptime: process.uptime(),
+                        platform: process.platform,
+                        arch: process.arch,
+                        version: process.version,
+                        brain: {
+                            provider: config.brain.provider,
+                            model: getModelName(),
+                            gpu: config.brain.llamaCpp.gpu || 'none',
+                            status: await this.brain.healthCheck(),
+                        },
+                        skills: {
+                            builtin: this.skillRegistry.getAll().map(s => s.name),
+                            portable: await (async () => {
+                                const skillsDir = config.skills.portableDir;
+                                try {
+                                    if (!existsSync(skillsDir)) return [];
+                                    const files = await readdir(skillsDir);
+                                    return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+                                        .map(f => path.basename(f, path.extname(f)));
+                                } catch { return []; }
+                            })()
+                        },
+                        scheduler: {
+                            status: 'active',
+                            pollInterval: config.scheduler.pollIntervalMs
+                        },
+                        browser: {
+                            status: 'daemon active'
+                        }
+                    };
+                    ws.send(JSON.stringify(info));
+                } catch (err) {
+                    logger.error('Failed to collect system info', 'Gateway', err);
+                    ws.send(JSON.stringify({ type: 'error', message: `Failed to collect system info: ${getErrorMessage(err)}` }));
                 }
-            };
-            ws.send(JSON.stringify(info));
+            }
+        } catch (err) {
+            logger.error(`Error handling WebSocket message (${payload.type})`, 'Gateway', err);
+            ws.send(JSON.stringify({ type: 'error', message: `Gateway Error: ${getErrorMessage(err)}` }));
         }
     }
 
@@ -287,7 +294,22 @@ export class LocalGateway {
             if (shouldKill) {
                 if (killProcess(pid)) {
                     logger.success(`Killed process ${pid}`, 'Gateway');
-                    await new Promise(r => setTimeout(r, config.gateway.portKillDelayMs));
+
+                    // Poll until the port is actually free, with a timeout.
+                    // This prevents EADDRINUSE if the OS or process cleanup is slow.
+                    const timeout = 5000;
+                    const interval = 200;
+                    let elapsed = 0;
+
+                    while (await isPortInUse(this.port) && elapsed < timeout) {
+                        await new Promise(r => setTimeout(r, interval));
+                        elapsed += interval;
+                    }
+
+                    if (await isPortInUse(this.port)) {
+                        logger.error(`Port ${this.port} is still in use after ${timeout / 1000}s.`, 'Gateway');
+                        process.exit(1);
+                    }
                 } else {
                     logger.error(`Failed to kill process ${pid}. Try manually: kill -9 ${pid}`, 'Gateway');
                     process.exit(1);
@@ -326,13 +348,17 @@ export class LocalGateway {
         await this.skillRegistry.loadExtensions(config.skills.customDir);
 
         const portableDir = config.skills.portableDir;
-        const skillEntries = await loadSkillEntries(portableDir);
-        this.skillsPrompt = buildSkillsPrompt(skillEntries);
+        if (existsSync(portableDir)) {
+            const skillEntries = await loadSkillEntries(portableDir);
+            this.skillsPrompt = buildSkillsPrompt(skillEntries);
+        }
 
         let yamlCount = 0;
         try {
-            const files = await readdir(portableDir);
-            yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
+            if (existsSync(portableDir)) {
+                const files = await readdir(portableDir);
+                yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
+            }
         } catch { /* skills dir may not exist */ }
 
         printStatus('Skills', `${this.skillRegistry.getAll().length} built-in · ${yamlCount} portable`);

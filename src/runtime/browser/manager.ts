@@ -79,6 +79,11 @@ export class BrowserManager {
         fs.mkdirSync(profileDir, { recursive: true });
         fs.mkdirSync(previewsDir, { recursive: true });
 
+        // Detect if we are running in a production bundle (e.g. from /usr/lib/openmoose)
+        // In production, daemon.js and Dockerfile are already in the image context
+        // and daemon.js is COPY'd into the image, so we don't need to bind-mount it.
+        const isProduction = __dirname.includes('resources/gateway') || __dirname.includes('/usr/lib/openmoose');
+
         logger.info('Starting Browser Daemon...', 'BrowserManager');
 
         const args = [
@@ -89,12 +94,12 @@ export class BrowserManager {
             '-e', `PORT=${BROWSER_DAEMON_PORT}`,
         ];
 
-        // In dev, daemon.js lives alongside this file in src/; bind-mount it
-        // so changes take effect without rebuilding the image.  In prod the
-        // file is baked into the image via COPY, so no mount is needed.
-        const daemonSrc = path.resolve(__dirname, 'daemon.js');
-        if (fs.existsSync(daemonSrc)) {
-            args.push('-v', `${daemonSrc}:/app/daemon.js:ro`);
+        // Only bind-mount daemon.js in development for hot-reloading
+        if (!isProduction) {
+            const daemonSrc = path.resolve(__dirname, 'daemon.js');
+            if (fs.existsSync(daemonSrc)) {
+                args.push('-v', `${daemonSrc}:/app/daemon.js:ro`);
+            }
         }
 
         args.push(
@@ -109,7 +114,10 @@ export class BrowserManager {
         );
 
         const startCode = await dockerRun(args, 'BrowserDaemon');
-        if (startCode !== 0) throw new Error(`Failed to start browser daemon (exit ${startCode})`);
+        if (startCode !== 0) {
+            logger.error(`Docker run failed with exit code ${startCode}. Check if an image or container named "${BROWSER_DAEMON_CONTAINER_NAME}" already exists or if you have permissions to run Docker.`, 'BrowserManager');
+            throw new Error(`Failed to start browser daemon (exit ${startCode})`);
+        }
 
         await this.waitForHealthy();
     }

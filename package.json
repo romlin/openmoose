@@ -37,8 +37,9 @@
     "test:coverage": "vitest run --coverage",
     "build:gateway": "bash scripts/bundle-gateway.sh",
     "setup:linux": "bash scripts/setup-linux.sh",
-    "clean": "rm -rf dist app/dist app/src-tauri/target/release/bundle app/src-tauri/resources/gateway",
-    "dist": "pnpm clean && pnpm build:gateway && cd app && pnpm tauri build --bundles deb,rpm"
+    "clean": "rm -rf dist app/dist app/src-tauri/resources/gateway app/src-tauri/target/release/bundle app/src-tauri/target/release/openmoose",
+    "clean:all": "rm -rf dist app/dist app/src-tauri/target app/src-tauri/resources/gateway",
+    "dist": "pnpm clean && pnpm build:gateway && cd app && pnpm tauri build --bundles deb"
   },
   "dependencies": {
     "@hapi/boom": "10.0.1",

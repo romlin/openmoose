@@ -21,25 +21,37 @@ cp -r "$REPO_ROOT/dist/"* "$RESOURCES_DIR/"
 cp "$REPO_ROOT/package.json" "$RESOURCES_DIR/package.json"
 
 # Install production-only dependencies into the resource directory
-echo "==> Installing production dependencies..."
-cd "$RESOURCES_DIR"
-# Use npm for the production bundle as it's more reliable for standalone installs
-# without workspace context. We omit dev deps and ignore scripts for speed/safety.
-npm install --omit=dev --no-package-lock --no-audit --no-fund --ignore-scripts
+# Optimization: Skip if node_modules already exists unless --force is used
+FORCE_INSTALL=false
+if [[ "$*" == *"-f"* || "$*" == *"--force"* ]]; then
+  FORCE_INSTALL=true
+fi
+
+if [ -d "$RESOURCES_DIR/node_modules" ] && [ "$FORCE_INSTALL" = false ]; then
+  echo "==> Skipping dependency install (node_modules exists, use --force to override)"
+else
+  echo "==> Installing production dependencies..."
+  cd "$RESOURCES_DIR"
+  # Use npm for the production bundle as it's more reliable for standalone installs
+  npm install --omit=dev --no-package-lock --no-audit --no-fund --ignore-scripts
+fi
 
 # Prune unnecessary files to reduce bundle size (from 1.3GB+)
 echo "==> Pruning bundle size..."
 find . -type f -name "*.dll" -delete
 find . -type f -name "*.exe" -delete
 find . -type f -name "*.dylib" -delete
-find . -type f -name "*.map" -delete
-find . -type f -name "*.md" -delete
-find . -type d -name "test" -exec rm -rf {} +
-find . -type d -name "tests" -exec rm -rf {} +
-find . -type d -name "example" -exec rm -rf {} +
-find . -type d -name "examples" -exec rm -rf {} +
 find . -type d -name "docs" -exec rm -rf {} +
 find . -type d -name "documentation" -exec rm -rf {} +
+
+# Ultra-Pruning: Remove non-essential code/assets that bloat the bundle
+echo "==> Ultra-Pruning non-essential files..."
+find . -type f -name "*.map" -delete
+find . -type f -name "*.ts" -delete
+find . -type f -name "*.md" -delete
+find . -type f -name "*.txt" -delete
+find . -type f -name "LICENSE*" -delete
+find . -type f -name "README*" -delete
 
 # Intelligent Pruning: Keep only binaries for the current platform/arch
 echo "==> Pruning platform-specific AI binaries..."
@@ -72,10 +84,10 @@ if [ "$CURRENT_OS" == "linux" ] && [ "$ARCH" == "x64" ]; then
     rm -rf node_modules/@node-llama-cpp/linux-arm*
 fi
 
-# Specific pruning for heavy packages
+# Specific pruning for heavy packages (be careful with node-llama-cpp)
 rm -rf node_modules/typescript
 rm -rf node_modules/onnxruntime-node/test
-rm -rf node_modules/onnxruntime-web/dist # Sometimes redundant if node version is used
+rm -rf node_modules/onnxruntime-web # Slim down as we use node-native version
 
 # Clean up broken symlinks in .bin (crucial for Tauri resource bundling)
 echo "    - Cleaning broken symlinks..."
