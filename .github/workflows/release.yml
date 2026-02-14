@@ -44,7 +44,7 @@ jobs:
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
-        run: pnpm setup:linux
+        run: bash scripts/setup-linux.sh
 
       - uses: pnpm/action-setup@v4
         with:
