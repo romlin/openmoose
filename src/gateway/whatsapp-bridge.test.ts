@@ -25,7 +25,7 @@ describe('setupWhatsAppBridge', () => {
 
     beforeEach(() => {
         wa = new MockWhatsApp();
-        processFn = vi.fn().mockResolvedValue('Agent response');
+        processFn = vi.fn().mockResolvedValue({ text: 'Agent response', source: 'brain' });
         sessions = new Map();
         setupWhatsAppBridge(wa as never, processFn, sessions);
     });

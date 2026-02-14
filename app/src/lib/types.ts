@@ -6,6 +6,8 @@ export interface Message {
     id: number;
     role: "user" | "assistant";
     content: string;
+    /** Source attribution: e.g. "skill:weather", "browser", "brain", "tools:python_execute" */
+    source?: string;
 }
 
 export interface DownloadProgress {
@@ -61,7 +63,11 @@ export interface GatewayMessage {
     text?: string;
     status?: BrainStatus;
     message?: string;
-    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    history?: Array<{ role: "user" | "assistant"; content: string; source?: string }>;
     success?: boolean;
     memories?: MemoryEntry[];
+    /** Tool name sent with agent.tool_call */
+    name?: string;
+    /** Source attribution sent with agent.final */
+    source?: string;
 }

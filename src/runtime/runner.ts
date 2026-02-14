@@ -17,6 +17,13 @@ import { logger } from '../infra/logger.js';
 import { getErrorMessage } from '../infra/errors.js';
 import { config } from '../config/index.js';
 
+/** Result of a runner invocation, including the response text and its source. */
+export interface RunResult {
+    text: string;
+    /** Where the response came from: e.g. "skill:weather", "browser", "brain", "tools:python_execute" */
+    source: string;
+}
+
 /**
  * AgentRunner: Orchestrates the interaction between the Brain, Hands, and Memory.
  * Uses Semantic Router for fast intent matching, falls back to LLM for complex queries.
@@ -86,7 +93,7 @@ export class AgentRunner {
             onToolResult?: (payload: { name: string, success: boolean, error?: string }) => void
         },
         history: { role: string, content: string }[] = []
-    ) {
+    ): Promise<RunResult> {
         const formatter = new StreamingFormatter();
         const tools = this.registry.getOpenAITools();
         const skillContext = this.buildContext();
@@ -96,7 +103,7 @@ export class AgentRunner {
         if (directRouteResult.handled && directRouteResult.success) {
             const summary = await this.summarizeResults(message, [message], [{ action: message, result: directRouteResult.result || '' }], history, options.onDelta, formatter);
             await this.autoCapture(message);
-            return summary;
+            return { text: summary, source: `skill:${directRouteResult.bestSkill}` };
         }
         if (directRouteResult.handled && !directRouteResult.success) {
             logger.warn(`Router skill "${directRouteResult.bestSkill}" matched but execution failed: ${directRouteResult.result}`, 'Runner');
@@ -105,6 +112,7 @@ export class AgentRunner {
         // STEP 2: Try Deconstruction (handles multi-intent or complex queries)
         const actions = await this.deconstructMessage(message);
         const routerResults: { action: string, result: string }[] = [];
+        const routerSkills: string[] = [];
         let cumulativeContext = '';
 
         // If deconstruction didn't actually split it, and we already tried direct route, 
@@ -121,6 +129,7 @@ export class AgentRunner {
                     if (routeResult.success) {
                         logger.success(`Step success: ${routeResult.result}`, 'Runner');
                         routerResults.push({ action, result: routeResult.result || '' });
+                        if (routeResult.bestSkill) routerSkills.push(routeResult.bestSkill);
                         cumulativeContext += (cumulativeContext ? '\n' : '') + `Result of "${action}": ${routeResult.result}`;
                     } else {
                         logger.error(`Step failed: ${routeResult.result}`, 'Runner');
@@ -136,7 +145,8 @@ export class AgentRunner {
         if (routerResults.length > 0) {
             const summary = await this.summarizeResults(message, actions, routerResults, history, options.onDelta, formatter);
             await this.autoCapture(message);
-            return summary;
+            const skillSource = routerSkills.length > 0 ? routerSkills.join(',') : 'unknown';
+            return { text: summary, source: `skill:${skillSource}` };
         }
 
         // STEP 3: Fall back to full LLM with tools
@@ -144,6 +154,7 @@ export class AgentRunner {
         let currentMessage = message;
         let accumulatedResponse = '';
         let iterations = 0;
+        const toolsUsed = new Set<string>();
 
         while (iterations < config.runner.maxToolIterations) {
             const { fullResponse, toolCalls } = await this.streamAndCollect(
@@ -155,6 +166,7 @@ export class AgentRunner {
             currentHistory.push({ role: 'assistant', content: fullResponse });
 
             if (toolCalls && toolCalls.length > 0) {
+                for (const tc of toolCalls) toolsUsed.add(tc.function.name);
                 const results = await this.executeToolCalls(toolCalls, options.onToolCall, options.onToolResult);
                 currentMessage = `Tool results: ${JSON.stringify(results)}. Base your answer strictly on these results. If the results lack detail for part of the question, say what you know and offer to look deeper. Do not invent information.`;
                 iterations++;
@@ -164,7 +176,18 @@ export class AgentRunner {
         }
 
         await this.autoCapture(message);
-        return accumulatedResponse.trim();
+
+        // Determine source: browser > other tools > brain-only
+        let source: string;
+        if (toolsUsed.has('browser_action')) {
+            source = 'browser';
+        } else if (toolsUsed.size > 0) {
+            source = `tools:${[...toolsUsed].join(',')}`;
+        } else {
+            source = 'brain';
+        }
+
+        return { text: accumulatedResponse.trim(), source };
     }
 
     private async streamAndCollect(

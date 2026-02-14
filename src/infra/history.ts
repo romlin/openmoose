@@ -13,6 +13,8 @@ export interface HistoryMessage {
     role: 'user' | 'assistant';
     content: string;
     timestamp: number;
+    /** Source attribution for assistant messages (e.g. "skill:weather", "browser", "brain"). */
+    source?: string;
 }
 
 export class HistoryManager {
@@ -30,13 +32,14 @@ export class HistoryManager {
     }
 
     /** Append a single message to the history log. */
-    async append(role: 'user' | 'assistant', content: string) {
+    async append(role: 'user' | 'assistant', content: string, source?: string) {
         try {
             await this.ensureDir();
             const record: HistoryMessage = {
                 role,
                 content,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                ...(source ? { source } : {}),
             };
             await appendFile(this.historyPath, JSON.stringify(record) + '\n', 'utf-8');
         } catch (err) {

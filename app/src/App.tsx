@@ -30,6 +30,7 @@ function App() {
   const [gatewayPort, setGatewayPort] = useState<number>(DEFAULT_GATEWAY_PORT);
   const [gatewayReady, setGatewayReady] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const pendingSourceRef = useRef<string | null>(null);
 
   // Port received from the Rust backend (authoritative), falls back to the default.
   const gatewayPortRef = useRef<number>(DEFAULT_GATEWAY_PORT);
@@ -45,26 +46,58 @@ function App() {
 
   const handleGatewayMessage = useCallback((payload: GatewayMessage) => {
     switch (payload.type) {
-      case "agent.delta":
+      case "agent.delta": {
         setIsThinking(false);
+        const source = pendingSourceRef.current;
         setMessages(prev => {
           const last = prev[prev.length - 1];
           if (last && last.role === "assistant") {
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...last,
-              content: last.content + (payload.text || "")
+              content: last.content + (payload.text || ""),
+              ...(source && !last.source ? { source } : {}),
             };
             return updated;
           }
-          return [...prev, { id: Date.now(), role: "assistant", content: payload.text || "" }];
+          return [...prev, { id: Date.now(), role: "assistant", content: payload.text || "", ...(source ? { source } : {}) }];
         });
         break;
-      case "agent.tool_call":
+      }
+      case "agent.tool_call": {
         setIsThinking(true);
+        // Store the source so it's applied when the first delta arrives
+        const toolSource = payload.name === "browser_action" ? "browser"
+          : payload.name ? `tools:${payload.name}` : undefined;
+        if (toolSource) {
+          pendingSourceRef.current = toolSource;
+          // If there's already an assistant message being streamed, tag it now
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant" && last.content) {
+              const updated = [...prev];
+              updated[updated.length - 1] = { ...last, source: toolSource };
+              return updated;
+            }
+            return prev;
+          });
+        }
         break;
+      }
       case "agent.final":
         setIsThinking(false);
+        pendingSourceRef.current = null;
+        if (payload.source) {
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant") {
+              const updated = [...prev];
+              updated[updated.length - 1] = { ...last, source: payload.source };
+              return updated;
+            }
+            return prev;
+          });
+        }
         break;
       case "error":
         setIsThinking(false);
@@ -75,7 +108,8 @@ function App() {
           setMessages(payload.history.map((m, index) => ({
             id: index + 1,
             role: m.role,
-            content: m.content
+            content: m.content,
+            source: m.source,
           })));
         }
         break;
@@ -106,10 +140,13 @@ function App() {
     }
   }, []);
 
+  const closedIntentionallyRef = useRef(false);
+
   const connectWebSocket = useCallback(() => {
     // Return early if we have a socket that is not CLOSED.
     // This prevents CONNECTING or OPEN sockets from being overwritten.
     if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) return;
+    closedIntentionallyRef.current = false;
 
     const port = gatewayPortRef.current;
     const ws = new WebSocket(`ws://127.0.0.1:${port}`);
@@ -134,14 +171,16 @@ function App() {
 
     ws.onerror = (err) => {
       console.error("WebSocket error:", err);
-      // Do NOT force close or reconnect here; let onclose handle cleanup/retry
     };
 
     ws.onclose = () => {
       console.log("WebSocket disconnected");
       wsRef.current = null;
       setWs(null);
-      setTimeout(connectWebSocket, 1000);
+      // Only auto-reconnect on unexpected disconnects, not cleanup/HMR
+      if (!closedIntentionallyRef.current) {
+        setTimeout(connectWebSocket, 1000);
+      }
     };
   }, [handleGatewayMessage]);
 
@@ -193,6 +232,7 @@ function App() {
     loadConfig();
 
     return () => {
+      closedIntentionallyRef.current = true;
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -218,6 +258,7 @@ function App() {
   }, []);
 
   const handleSendMessage = (content: string) => {
+    pendingSourceRef.current = null;
     setMessages(prev => [...prev, { id: Date.now(), role: "user", content }]);
     setIsThinking(true);
 

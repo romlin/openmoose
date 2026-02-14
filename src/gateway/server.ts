@@ -129,11 +129,11 @@ export class LocalGateway {
                     }
                 );
 
-                if (payload.audio && response) {
-                    const audioBuffer = await this.audio.generateWav(response);
+                if (payload.audio && response?.text) {
+                    const audioBuffer = await this.audio.generateWav(response.text);
                     ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
                 }
-                ws.send(JSON.stringify({ type: 'agent.final' }));
+                ws.send(JSON.stringify({ type: 'agent.final', source: response?.source }));
             } else if (payload.type === 'agent.history') {
                 const history = await this.history.loadLast(payload.limit || 50);
                 ws.send(JSON.stringify({ type: 'agent.history.result', history }));
@@ -215,8 +215,8 @@ export class LocalGateway {
             onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void,
             onToolResult?: (payload: { name: string; success: boolean; error?: string }) => void
         } = {}
-    ): Promise<string> {
-        const fullResponse = await this.runner.run(message, {
+    ): Promise<{ text: string; source: string }> {
+        const result = await this.runner.run(message, {
             onDelta: callbacks.onDelta || (() => { }),
             onToolCall: callbacks.onToolCall,
             onToolResult: callbacks.onToolResult
@@ -224,15 +224,15 @@ export class LocalGateway {
 
         const updatedHistory = [...history,
         { role: 'user' as const, content: message },
-        { role: 'assistant' as const, content: fullResponse }
+        { role: 'assistant' as const, content: result.text }
         ].slice(-config.gateway.maxHistoryLength);
 
         // Persist to disk
         await this.history.append('user', message);
-        await this.history.append('assistant', fullResponse);
+        await this.history.append('assistant', result.text, result.source);
 
         saveHistory(updatedHistory);
-        return fullResponse;
+        return result;
     }
 
     /** Start all gateway services and the HTTP/WS server. */
@@ -374,7 +374,8 @@ export class LocalGateway {
             pollInterval: config.scheduler.pollIntervalMs,
             onTaskRun: async (task) => {
                 logger.info(`Running task: ${task.name}`, 'Scheduler');
-                return await this.runner.run(task.prompt, { onDelta: () => { }, onToolCall: () => { } });
+                const result = await this.runner.run(task.prompt, { onDelta: () => { }, onToolCall: () => { } });
+                return result.text;
             }
         });
     }

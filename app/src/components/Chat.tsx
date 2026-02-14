@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatBytes, calcProgressPercent, copyToClipboard } from "../lib/utils";
 import type { Message, DownloadProgress, BrainStatus } from "../lib/types";
-import { Clipboard, Check, Brain } from "lucide-react";
+import { Copy, Check, Brain, Globe, Zap, Wrench } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 
 interface ChatProps {
@@ -52,6 +52,35 @@ function FormattedText({ text }: { text: string }) {
     );
 }
 
+/** Source attribution for response origin. */
+function SourceBadge({ source }: { source: string }) {
+    let icon: React.ReactNode;
+    let label: string;
+
+    if (source.startsWith('skill:')) {
+        icon = <Zap size={14} />;
+        label = source.slice(6);
+    } else if (source === 'browser') {
+        icon = <Globe size={14} />;
+        label = 'Web';
+    } else if (source === 'brain') {
+        icon = <Brain size={14} />;
+        label = 'Memory';
+    } else if (source.startsWith('tools:')) {
+        icon = <Wrench size={14} />;
+        label = source.slice(6);
+    } else {
+        return null;
+    }
+
+    return (
+        <button className="msg-action source-badge" title={`Source: ${source}`}>
+            {icon}
+            <span className="source-label">{label}</span>
+        </button>
+    );
+}
+
 function CopyButton({ content }: { content: string }) {
     const [copied, setCopied] = useState(false);
 
@@ -65,11 +94,11 @@ function CopyButton({ content }: { content: string }) {
 
     return (
         <button
-            className={`copy-btn ${copied ? 'copied' : ''}`}
+            className={`msg-action copy-btn ${copied ? 'copied' : ''}`}
             onClick={handleCopy}
             title="Copy message"
         >
-            {copied ? <Check size={14} /> : <Clipboard size={14} />}
+            {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
     );
 }
@@ -117,7 +146,12 @@ export function Chat({ messages, onSend, isThinking, isDownloading, downloadProg
                         <div className="message-content">
                             <FormattedText text={m.content} />
                         </div>
-                        <CopyButton content={m.content} />
+                        {m.role === "assistant" && (
+                            <div className="message-actions">
+                                {m.source && <SourceBadge source={m.source} />}
+                                <CopyButton content={m.content} />
+                            </div>
+                        )}
                     </div>
                 ))}
                 {(isThinking || brainStatus === "warming_up") && (
