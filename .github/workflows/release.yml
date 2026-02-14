@@ -56,6 +56,9 @@ jobs:
       - name: Build gateway
         run: pnpm build:gateway
 
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@2.10.0
+
       - name: Build and Package
         uses: tauri-apps/tauri-action@v0.5
         env:
@@ -66,6 +69,6 @@ jobs:
           releaseBody: 'Automatic release'
           releaseDraft: true
           prerelease: false
-          tauriScript: npx tauri
+          tauriScript: tauri
           args: ${{ matrix.args }}
           projectPath: './app'
