@@ -170,12 +170,14 @@ export class SemanticRouter {
         try {
             const result = await match.skill.execute(match.args, context, skillContext);
             if (result.success) {
-                return { handled: true, success: true, result: result.result, confidence: match.confidence };
+                return { handled: true, success: true, result: result.result, confidence: match.confidence, bestSkill: match.skill.name };
             } else {
-                return { handled: true, success: false, result: result.error, confidence: match.confidence };
+                logger.warn(`Skill "${match.skill.name}" execution failed: ${result.error}`, 'Router');
+                return { handled: true, success: false, result: result.error, confidence: match.confidence, bestSkill: match.skill.name };
             }
         } catch (error) {
-            return { handled: true, success: false, result: String(error), confidence: match.confidence };
+            logger.warn(`Skill "${match.skill.name}" threw an error: ${getErrorMessage(error)}`, 'Router');
+            return { handled: true, success: false, result: String(error), confidence: match.confidence, bestSkill: match.skill.name };
         }
     }
 }

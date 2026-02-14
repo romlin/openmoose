@@ -19,5 +19,6 @@ args:
       - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
+host: true
 command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\""
  

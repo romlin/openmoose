@@ -225,6 +225,7 @@ app/
 │   │   ├── MemoryView.tsx  Memory browser with search/filter
 │   │   ├── DebugView.tsx   System info and diagnostics
 │   │   ├── PageHeader.tsx  Reusable header component
+│   │   ├── ConfirmDialog.tsx Custom confirmation dialog
 │   │   └── SetupWizard.tsx First-run setup flow
 │   └── lib/
 │       ├── types.ts        Shared TypeScript types
@@ -329,9 +330,8 @@ args:
       - "weather (?:in|for|at) ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "how is the weather in ([a-zA-ZåäöÅÄÖ\\s]+)"
       - "(?:vädret|väder) (?:i|för) ([a-zA-ZåäöÅÄÖ\\s]+)"
-    fallback: Stockholm
-command: "{{open}} \"https://wttr.in/{{city|u}}?format=3\""
 host: true
+command: "python3 -c \"from urllib.request import urlopen; print(urlopen('https://wttr.in/{{city|u}}?format=3').read().decode().strip())\""
 ```
 
 ### Skill fields

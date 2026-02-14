@@ -8,4 +8,5 @@ examples:
   - "hur mycket är klockan"
   - "tell me the time"
   - "Get the current time"
+host: true
 command: "date '+%H:%M on %A, %B %d, %Y'"

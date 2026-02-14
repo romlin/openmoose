@@ -98,6 +98,9 @@ export class AgentRunner {
             await this.autoCapture(message);
             return summary;
         }
+        if (directRouteResult.handled && !directRouteResult.success) {
+            logger.warn(`Router skill "${directRouteResult.bestSkill}" matched but execution failed: ${directRouteResult.result}`, 'Runner');
+        }
 
         // STEP 2: Try Deconstruction (handles multi-intent or complex queries)
         const actions = await this.deconstructMessage(message);
