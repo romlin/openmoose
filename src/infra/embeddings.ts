@@ -3,7 +3,9 @@
  * Handles model loading and vector generation.
  */
 
+import path from 'node:path';
 import { logger } from './logger.js';
+import { config } from '../config/index.js';
 
 // Define a type for the pipeline to avoid 'any'
 export type FeatureExtractionPipeline = (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
@@ -43,7 +45,12 @@ export class EmbeddingProvider {
 
         try {
             logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
-            const { pipeline } = await import('@huggingface/transformers');
+            const { pipeline, env } = await import('@huggingface/transformers');
+
+            // Set cache directory to a writable path in MOOSE_HOME
+            env.cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
+            env.allowRemoteModels = true;
+
             this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
             logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
         } catch (err) {

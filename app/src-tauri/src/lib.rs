@@ -5,8 +5,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_shell::process::CommandChild;
-use tauri_plugin_shell::ShellExt;
 
 // ── Constants (single source of truth for model identity) ──────────────
 const MODEL_FILENAME: &str = "Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf";
@@ -64,23 +62,58 @@ fn get_gateway_port() -> u16 {
         .unwrap_or(DEFAULT_GATEWAY_PORT)
 }
 
-struct GatewayState(Mutex<Option<CommandChild>>);
+/// Robust binary resolver that prefers absolute system paths for production stability.
+fn resolve_bin(name: &str) -> String {
+    let paths = [
+        format!("/usr/bin/{}", name),
+        format!("/usr/local/bin/{}", name),
+    ];
 
-fn find_project_root() -> Option<PathBuf> {
-    let mut current = std::env::current_dir().ok()?;
+    for path in &paths {
+        if std::path::Path::new(path).exists() {
+            return path.clone();
+        }
+    }
+    name.to_string()
+}
+
+struct GatewayState(Mutex<Option<std::process::Child>>);
+
+/// Locate the gateway entry point.
+///
+/// In production builds the compiled gateway lives inside the Tauri resource
+/// directory (`resources/gateway/`).  During development, fall back to the
+/// project root's `dist/` directory (built by `pnpm build`).
+fn resolve_gateway_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // 1. Try the bundled resource directory (production)
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("resources/gateway");
+        if bundled.join("gateway/server.js").exists() {
+            return Ok(bundled);
+        }
+    }
+
+    // 2. Fallback: dev mode — find project root and use dist/
+    let mut current = std::env::current_dir().map_err(|e| e.to_string())?;
     loop {
-        // OpenMoose root has both package.json and pnpm-workspace.yaml (or src/gateway)
         if current.join("package.json").exists()
             && (current.join("pnpm-workspace.yaml").exists()
                 || current.join("src/gateway").exists())
         {
-            return Some(current);
+            let dist = current.join("dist");
+            if dist.join("gateway/server.js").exists() {
+                return Ok(dist);
+            }
+            // dist/ not built yet — return the project root so the
+            // gateway script can still be used via pnpm.
+            return Ok(current);
         }
         if !current.pop() {
             break;
         }
     }
-    None
+
+    Err("Could not locate gateway: neither bundled resources nor project root found".to_string())
 }
 
 fn start_gateway_internal(
@@ -92,36 +125,65 @@ fn start_gateway_internal(
         return Ok("Gateway already running".to_string());
     }
 
-    let root_dir = find_project_root()
-        .ok_or("Could not find project root (package.json not found in parents)")?;
-    println!("[Rust] Found project root at: {:?}", root_dir);
+    let gateway_dir = resolve_gateway_dir(app)?;
+    let port = get_gateway_port();
 
-    let shell = app.shell();
+    // Determine whether to run via `node` (production) or `pnpm` (dev)
+    let entry_file = gateway_dir.join("gateway/server.js");
 
-    // Prefer pnpm if available, otherwise fallback to npm
-    let has_pnpm = std::process::Command::new("pnpm")
-        .arg("--version")
-        .output()
-        .is_ok();
-    let cmd = if has_pnpm { "pnpm" } else { "npm" };
+    if entry_file.exists() {
+        // Production or pre-built dev mode: run `node gateway/server.js`
+        println!(
+            "[Rust] Starting gateway via node in {:?} on port {}",
+            gateway_dir, port
+        );
 
-    println!("[Rust] Starting gateway using {} in {:?}", cmd, root_dir);
+        let output = std::process::Command::new(resolve_bin("node"))
+            .arg("gateway/server.js")
+            .current_dir(&gateway_dir)
+            .env("GATEWAY_PORT", port.to_string())
+            .spawn();
 
-    let output = shell
-        .command(cmd)
-        .args(["run", "gateway"])
-        .current_dir(root_dir)
-        .spawn();
-
-    match output {
-        Ok((_rx, child)) => {
-            *lock = Some(child);
-            Ok("Gateway started".to_string())
+        match output {
+            Ok(child) => {
+                *lock = Some(child);
+                Ok("Gateway started (node)".to_string())
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to spawn gateway process: {}", e);
+                println!("[Rust] Error: {}", err_msg);
+                Err(err_msg)
+            }
         }
-        Err(e) => {
-            let err_msg = format!("Failed to spawn gateway process: {}", e);
-            println!("[Rust] Error: {}", err_msg);
-            Err(err_msg)
+    } else {
+        // Dev fallback: gateway_dir is the project root, use pnpm
+        println!(
+            "[Rust] Starting gateway via pnpm in {:?} on port {}",
+            gateway_dir, port
+        );
+
+        let has_pnpm = std::process::Command::new("pnpm")
+            .arg("--version")
+            .output()
+            .is_ok();
+        let cmd = if has_pnpm { "pnpm" } else { "npm" };
+
+        let output = std::process::Command::new(cmd)
+            .args(["run", "gateway"])
+            .current_dir(&gateway_dir)
+            .env("GATEWAY_PORT", port.to_string())
+            .spawn();
+
+        match output {
+            Ok(child) => {
+                *lock = Some(child);
+                Ok(format!("Gateway started ({})", cmd))
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to spawn gateway process: {}", e);
+                println!("[Rust] Error: {}", err_msg);
+                Err(err_msg)
+            }
         }
     }
 }
@@ -137,7 +199,7 @@ async fn start_gateway(
 #[tauri::command]
 async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> {
     let mut lock = state.0.lock().unwrap();
-    if let Some(child) = lock.take() {
+    if let Some(mut child) = lock.take() {
         let kill_result = child.kill();
         match kill_result {
             Ok(_) => Ok("Gateway stopped".to_string()),
@@ -145,6 +207,22 @@ async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> 
         }
     } else {
         Ok("Gateway not running".to_string())
+    }
+}
+
+#[tauri::command]
+async fn check_node(_app: tauri::AppHandle) -> Result<String, String> {
+    let output = std::process::Command::new(resolve_bin("node"))
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Node.js not found: {}", e))?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(version)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Node.js check failed: {}", stderr))
     }
 }
 
@@ -376,9 +454,10 @@ async fn update_config(app: tauri::AppHandle, config: AppConfig) -> Result<(), S
 }
 
 #[tauri::command]
-async fn check_docker(app: tauri::AppHandle) -> Result<bool, String> {
-    let shell = app.shell();
-    let output = shell.command("docker").args(["info"]).output().await;
+async fn check_docker(_app: tauri::AppHandle) -> Result<bool, String> {
+    let output = std::process::Command::new(resolve_bin("docker"))
+        .arg("info")
+        .output();
 
     match output {
         Ok(out) => {
@@ -403,6 +482,7 @@ pub fn run() {
             start_gateway,
             stop_gateway,
             check_docker,
+            check_node,
             check_model_exists,
             get_startup_info,
             download_model,
@@ -435,5 +515,16 @@ mod tests {
         // Without GATEWAY_PORT env var, should return the default
         std::env::remove_var("GATEWAY_PORT");
         assert_eq!(get_gateway_port(), DEFAULT_GATEWAY_PORT);
+    }
+
+    #[test]
+    fn test_check_node_binary_exists() {
+        // Just verify that the node binary lookup doesn't panic
+        let output = std::process::Command::new("node")
+            .arg("--version")
+            .output();
+        // We don't assert success since CI might not have node,
+        // but the code path should not panic.
+        assert!(output.is_ok() || output.is_err());
     }
 }

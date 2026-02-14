@@ -19,18 +19,35 @@ export function SetupWizard({
     onStartDownload
 }: SetupWizardProps) {
     const [step, setStep] = useState(1);
+    const [nodeStatus, setNodeStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
+    const [nodeVersion, setNodeVersion] = useState<string | null>(null);
     const [dockerStatus, setDockerStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
 
     const nextStep = () => setStep(prev => prev + 1);
 
     useEffect(() => {
-        if (step === 2 && dockerStatus === "not_checked") {
+        if (step === 2 && nodeStatus === "not_checked") {
+            checkNode();
+        }
+        if (step === 3 && dockerStatus === "not_checked") {
             checkDocker();
         }
-        if (step === 3 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
+        if (step === 4 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
             onStartDownload();
         }
-    }, [step, dockerStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
+    }, [step, nodeStatus, dockerStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
+
+    const checkNode = async () => {
+        setNodeStatus("checking");
+        try {
+            const version = await invoke<string>("check_node");
+            setNodeVersion(version);
+            setNodeStatus("found");
+        } catch (err) {
+            console.error("Node.js check failed:", err);
+            setNodeStatus("missing");
+        }
+    };
 
     const checkDocker = async () => {
         setDockerStatus("checking");
@@ -57,6 +74,38 @@ export function SetupWizard({
                 )}
 
                 {step === 2 && (
+                    <div className="setup-step fadeIn">
+                        <h2>System Requirements</h2>
+                        <div className="mode-options">
+                            <div className="mode-card active">
+                                <h3>Node.js Runtime</h3>
+                                <p>The AI gateway requires Node.js (v20+) to run locally.</p>
+                            </div>
+                        </div>
+
+                        <div className={`docker-status ${nodeStatus}`}>
+                            {nodeStatus === "checking" && <p>Checking for Node.js...</p>}
+                            {nodeStatus === "found" && <p>Node.js detected: {nodeVersion}</p>}
+                            {nodeStatus === "missing" && (
+                                <div className="error-box">
+                                    <p>Node.js not found.</p>
+                                    <p className="setup-note">OpenMoose requires Node.js v20 or later. Install it from <strong>nodejs.org</strong> or via your package manager, then click retry.</p>
+                                    <button className="retry-btn" onClick={checkNode}>Retry Check</button>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            className="primary-btn"
+                            onClick={nextStep}
+                            disabled={nodeStatus !== "found"}
+                        >
+                            {nodeStatus === "found" ? "Continue" : "Waiting for Node.js..."}
+                        </button>
+                    </div>
+                )}
+
+                {step === 3 && (
                     <div className="setup-step fadeIn">
                         <h2>Secure by Default</h2>
                         <div className="mode-options">
@@ -88,7 +137,7 @@ export function SetupWizard({
                     </div>
                 )}
 
-                {step === 3 && (
+                {step === 4 && (
                     <div className="setup-step fadeIn">
                         <h2>Setting Up Your Moose</h2>
                         <div className="progress-container">

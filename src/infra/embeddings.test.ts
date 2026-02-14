@@ -17,6 +17,10 @@ vi.mock('@huggingface/transformers', () => ({
     pipeline: vi.fn().mockResolvedValue(
         (_text: string) => Promise.resolve({ data: new Float32Array(384).fill(0.1) })
     ),
+    env: {
+        cacheDir: '',
+        allowRemoteModels: true,
+    },
 }));
 
 describe('EmbeddingProvider', () => {

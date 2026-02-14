@@ -147,7 +147,7 @@ The gateway will be accessible at `http://localhost:18789`. Your models and vect
 
 ## Desktop App Development
 
-The desktop app lives in `app/` and is a **pnpm workspace** member. It is a Tauri v2 application with a React + TypeScript frontend and a Rust backend. The app does not re-implement any AI logic -- it spawns and connects to the **real** gateway process (`pnpm run gateway`) over WebSocket.
+The desktop app lives in `app/` and is a **pnpm workspace** member. It is a Tauri v2 application with a React + TypeScript frontend and a Rust backend. The app does not re-implement any AI logic -- it spawns and connects to its own bundled **Gateway** server over a secure local WebSocket.
 
 ### How It Works
 
@@ -155,22 +155,23 @@ The desktop app lives in `app/` and is a **pnpm workspace** member. It is a Taur
 ┌─────────────────────────────────────────────────┐
 │  Tauri App                                      │
 │  ┌──────────────┐    ┌────────────────────────┐ │
-│  │ Rust Backend  │───▶│ spawns: pnpm gateway   │ │
-│  │ (lib.rs)      │    │ (real LocalGateway)    │ │
+│  │ Rust Backend  │───▶│ spawns: node gate.js   │ │
+│  │ (lib.rs)      │    │ (Bundled Resource)     │ │
 │  └──────┬───────┘    └────────────────────────┘ │
 │         │ IPC                    ▲               │
 │  ┌──────▼───────┐     WebSocket │               │
 │  │ React UI     │───────────────┘               │
-│  │ (App.tsx)    │    port 18789                  │
+│  │ (App.tsx)    │    127.0.0.1:18789            │
 │  └──────────────┘                               │
 └─────────────────────────────────────────────────┘
 ```
 
 **Rust backend** (`app/src-tauri/src/lib.rs`) handles:
 - Model download (resumable, with progress events)
-- Gateway process lifecycle (start/stop)
+- Gateway process orchestration (absolute path resolution for `node`)
+- Production binary bundling (via `scripts/bundle-gateway.sh`)
 - Docker availability check
-- Config management (`~/.moose/config.json`, read-modify-write to preserve gateway fields)
+- Config management (`~/.moose/config.json`)
 
 **React frontend** (`app/src/`) handles:
 - Setup wizard (Docker check, model download, first-run)
@@ -449,6 +450,7 @@ All code execution is sandboxed with defense-in-depth:
 - **Stdin-Piped Execution** -- Code (Python/Node) is streamed via stdin, neutralizing shell-injection and `arg_max` limits.
 - **Kernel-Level Restrictions** -- `--security-opt=no-new-privileges` and `--pids-limit 50` prevent escalation and fork-bombing.
 - **Output Exhaustion Protection** -- Strict **5MB cap** on `stdout/stderr` prevents host OOM crashes.
+- **Network Hardening** -- The gateway strictly binds to `127.0.0.1` and uses **CORS + WebSocket Origin Verification** to allow connections only from the trusted Tauri app.
 - **Dropped dangerous capabilities** (`NET_RAW`, `MKNOD`, `AUDIT_WRITE`, etc.)
 - **Non-root user** (`--user 1000:1000`)
 - **Resource limits** (memory, CPU, timeout)

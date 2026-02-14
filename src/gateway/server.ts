@@ -6,6 +6,7 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { LocalBrain } from '../agents/brain.js';
 import { LocalAudio } from '../infra/audio.js';
@@ -48,6 +49,13 @@ const WsPayloadSchema = z.discriminatedUnion('type', [
 export class LocalGateway {
     private wss: WebSocketServer;
     private port: number;
+    private readonly allowedOrigins = [
+        'tauri://localhost',
+        'http://tauri.localhost',
+        'tauri://com.openmoose.chat',
+        'http://localhost:1420',
+        'http://localhost:5173'
+    ];
 
     private memory: LocalMemory;
     private sandbox: LocalSandbox;
@@ -154,15 +162,6 @@ export class LocalGateway {
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: String(err) }));
             }
         } else if (payload.type === 'agent.system.info') {
-            // Security: Only allow system info from localhost
-            const remoteAddress = (ws as any)._socket?.remoteAddress || '';
-            const isLocal = remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1';
-
-            if (!isLocal) {
-                ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: System info only available to local clients.' }));
-                return;
-            }
-
             const info = {
                 type: 'agent.system.info.result',
                 cpu: process.cpuUsage(),
@@ -229,13 +228,19 @@ export class LocalGateway {
         return fullResponse;
     }
 
-    /** Boot the gateway: resolve port conflicts, init all services, and start listening. */
+    /** Start all gateway services and the HTTP/WS server. */
     public async start() {
-        printBanner();
+        printBanner(config.version);
+        logger.info(`Starting gateway on ${config.gateway.host}:${this.port}`, 'Gateway');
 
-        await this.resolvePortConflict();
-        await this.initServices();
-        this.startHttpServer();
+        try {
+            await this.resolvePortConflict();
+            await this.initServices();
+            this.startHttpServer();
+        } catch (err) {
+            logger.error(`Gateway startup failed: ${getErrorMessage(err)}`, 'Gateway');
+            process.exit(1);
+        }
 
         // WhatsApp: connect if authenticated, skip otherwise
         const waAuthExists = existsSync(path.join(config.whatsapp.authDir, 'creds.json'));
@@ -439,14 +444,36 @@ export class LocalGateway {
 
     private startHttpServer() {
         const app = new Hono();
+
+        app.use('*', cors({
+            origin: this.allowedOrigins,
+            allowMethods: ['GET', 'POST', 'OPTIONS'],
+        }));
+
         app.get('/health', async (c) => c.json({ gateway: 'ok', brain: await this.brain.healthCheck() }));
-        const server = serve({ fetch: app.fetch, port: this.port });
+
+        const server = serve({
+            fetch: app.fetch,
+            port: this.port,
+            hostname: config.gateway.host
+        });
         server.on('upgrade', (req, socket, head) => {
+            const origin = req.headers.origin || '';
+
+            if (origin && !this.allowedOrigins.includes(origin)) {
+                logger.warn(`Unauthorized WebSocket upgrade attempt from origin: "${origin}"`, 'Gateway');
+                socket.destroy();
+                return;
+            }
+
             this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit('connection', ws, req));
         });
     }
 }
 
-if (import.meta.url.endsWith('server.ts')) {
-    new LocalGateway().start();
+if (import.meta.url.endsWith('server.ts') || import.meta.url.endsWith('server.js')) {
+    new LocalGateway().start().catch((err) => {
+        logger.error('Failed to start Gateway', 'Gateway', err);
+        process.exit(1);
+    });
 }

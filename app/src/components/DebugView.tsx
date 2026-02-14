@@ -24,6 +24,8 @@ export function DebugView({ onBack, ws, onMenuToggle }: DebugViewProps) {
                 const data = JSON.parse(event.data);
                 if (data.type === "agent.system.info.result") {
                     setInfo(data);
+                } else if (data.type === "error") {
+                    console.error("Gateway Debug Error:", data.message);
                 }
             };
 

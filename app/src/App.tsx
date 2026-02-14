@@ -105,7 +105,7 @@ function App() {
     if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) return;
 
     const port = gatewayPortRef.current;
-    const ws = new WebSocket(`ws://localhost:${port}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
     // Set ref immediately so subsequent calls block
     wsRef.current = ws;
 

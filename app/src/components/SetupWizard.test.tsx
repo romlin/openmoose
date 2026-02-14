@@ -3,7 +3,11 @@ import { describe, it, expect, vi } from "vitest";
 import { SetupWizard } from "./SetupWizard";
 
 vi.mock("@tauri-apps/api/core", () => ({
-    invoke: vi.fn().mockResolvedValue(false),
+    invoke: vi.fn().mockImplementation((cmd: string) => {
+        if (cmd === "check_node") return Promise.reject("not found");
+        if (cmd === "check_docker") return Promise.resolve(false);
+        return Promise.resolve(false);
+    }),
 }));
 
 describe("SetupWizard", () => {
@@ -21,28 +25,28 @@ describe("SetupWizard", () => {
         expect(screen.getByText("Get Started")).toBeInTheDocument();
     });
 
-    it("advances to step 2 on Get Started click", async () => {
+    it("advances to step 2 (Node.js check) on Get Started click", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        expect(screen.getByText("Secure by Default")).toBeInTheDocument();
+        expect(screen.getByText("System Requirements")).toBeInTheDocument();
     });
 
-    it("shows sandbox info on step 2", async () => {
+    it("shows Node.js requirement info on step 2", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        expect(screen.getByText("Hardened Sandbox")).toBeInTheDocument();
+        expect(screen.getByText("Node.js Runtime")).toBeInTheDocument();
     });
 
-    it("disables continue button when Docker is not found", async () => {
+    it("disables continue button when Node.js is not found", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        const continueBtn = screen.getByText("Waiting for Docker...");
+        const continueBtn = screen.getByText("Waiting for Node.js...");
         expect(continueBtn).toBeDisabled();
     });
 
@@ -53,7 +57,7 @@ describe("SetupWizard", () => {
                 downloadError="Network error"
             />
         );
-        // On step 1, error isn't visible yet (shown on step 3)
+        // On step 1, error isn't visible yet (shown on step 4)
         expect(screen.getByText("Welcome to OpenMoose")).toBeInTheDocument();
     });
 });

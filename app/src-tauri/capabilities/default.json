@@ -12,21 +12,38 @@
       "identifier": "shell:default",
       "allow": [
         {
-          "name": "npm",
+          "name": "node-run",
+          "cmd": "node",
+          "args": [
+            "gateway/server.js"
+          ]
+        },
+        {
+          "name": "node-version",
+          "cmd": "node",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "pnpm-gateway",
+          "cmd": "pnpm",
           "args": [
             "run",
             "gateway"
           ]
         },
         {
-          "name": "pnpm",
+          "name": "npm-gateway",
+          "cmd": "npm",
           "args": [
             "run",
             "gateway"
           ]
         },
         {
-          "name": "docker",
+          "name": "docker-info",
+          "cmd": "docker",
           "args": [
             "info"
           ]

@@ -56,6 +56,7 @@ export const config = {
     setupComplete: !!jsonConfig.setup_complete,
 
     gateway: {
+        host: process.env.GATEWAY_HOST || '127.0.0.1',
         port: Number(process.env.GATEWAY_PORT || 18789),
         /** Timeout for graceful cleanup on shutdown before forcing exit. */
         shutdownTimeoutMs: Number(process.env.GATEWAY_SHUTDOWN_TIMEOUT_MS || 10000),
