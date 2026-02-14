@@ -34,6 +34,8 @@ export class EmbeddingProvider {
         return instance;
     }
 
+    private initPromise: Promise<void> | null = null;
+
     async getEmbedding(text: string): Promise<number[]> {
         await this.ensureInitialized();
         const output = await this.extractor!(text, { pooling: 'mean', normalize: true });
@@ -43,19 +45,31 @@ export class EmbeddingProvider {
     private async ensureInitialized() {
         if (this.extractor) return;
 
-        try {
-            logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
-            const { pipeline, env } = await import('@huggingface/transformers');
-
-            // Set cache directory to a writable path in MOOSE_HOME
-            env.cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
-            env.allowRemoteModels = true;
-
-            this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
-            logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
-        } catch (err) {
-            logger.error('Failed to initialize embedding engine', 'Embeddings', err);
-            throw err;
+        // If initialization is already in progress, wait for it
+        if (this.initPromise) {
+            await this.initPromise;
+            return;
         }
+
+        this.initPromise = (async () => {
+            try {
+                logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
+                const { pipeline, env } = await import('@huggingface/transformers');
+
+                // Set cache directory to a writable path in MOOSE_HOME
+                env.cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
+                env.allowRemoteModels = true;
+
+                this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
+                logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
+            } catch (err) {
+                logger.error('Failed to initialize embedding engine', 'Embeddings', err);
+                throw err;
+            } finally {
+                this.initPromise = null;
+            }
+        })();
+
+        await this.initPromise;
     }
 }

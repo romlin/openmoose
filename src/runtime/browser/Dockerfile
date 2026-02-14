@@ -7,3 +7,5 @@ RUN npm init -y > /dev/null 2>&1 && npm install playwright@${PW_VERSION}
 RUN chown -R pwuser:pwuser /app
 USER pwuser
 COPY daemon.js .
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"

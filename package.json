@@ -83,7 +83,8 @@
     "overrides": {
       "tar": ">=7.5.7",
       "onnxruntime-node": "1.21.0",
-      "onnxruntime-common": "1.21.0"
+      "onnxruntime-common": "1.21.0",
+      "@eslint/plugin-kit@<0.3.4": ">=0.3.4"
     }
   }
 }
