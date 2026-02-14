@@ -8,7 +8,7 @@ import { LocalMemory } from '../infra/memory.js';
 import { LocalSandbox } from '../infra/sandbox.js';
 import { StreamingFormatter } from '../infra/formatter.js';
 import { SkillRegistry } from './registry.js';
-import { SkillContext } from './skill.js';
+import { SkillContext, SkillResult } from './skill.js';
 import { TaskScheduler } from './scheduler.js';
 import { WhatsAppManager } from '../infra/whatsapp.js';
 import { SemanticRouter } from './semantic-router.js';
@@ -262,7 +262,7 @@ export class AgentRunner {
             onToolCall?.({ name, args });
             logger.info(`Executing tool: ${name}`, 'Runner');
 
-            let result: { success: boolean; result?: unknown; error?: string };
+            let result: SkillResult;
             try {
                 result = await this.registry.execute(name, args, context);
             } catch (err) {
@@ -273,9 +273,9 @@ export class AgentRunner {
             }
 
             if (result.success) {
-                const resultStr = typeof result.result === 'string'
-                    ? result.result
-                    : (JSON.stringify(result.result) || 'undefined');
+                const resultStr = typeof result.data === 'string'
+                    ? result.data
+                    : (JSON.stringify(result.data) || 'No output');
                 const truncated = resultStr.length > 120 ? `${resultStr.slice(0, 120)}...` : resultStr;
                 logger.success(`Tool ${name} succeeded: ${truncated}`, 'Runner');
             } else {
