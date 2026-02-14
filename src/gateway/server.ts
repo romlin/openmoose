@@ -69,6 +69,7 @@ export class LocalGateway {
     private sessions = new Map<WebSocket, { role: 'user' | 'assistant', content: string }[]>();
     private whatsappSessions = new Map<string, { role: 'user' | 'assistant', content: string }[]>();
     private skillsPrompt = '';
+    private brainReady = false;
 
     constructor(port: number = config.gateway.port) {
         this.port = port;
@@ -118,6 +119,10 @@ export class LocalGateway {
 
         try {
             if (payload.type === 'agent.run') {
+                if (!this.brainReady) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Brain is still warming up. Please wait.' }));
+                    return;
+                }
                 const response = await this._processAgentRequest(
                     payload.message,
                     this.sessions.get(ws) || [],
@@ -396,10 +401,13 @@ export class LocalGateway {
         // Async warmup with status broadcast
         (async () => {
             try {
+                this.brainReady = false;
                 this.broadcast({ type: 'brain.status', status: 'warming_up', message: 'Loading model into RAM...' });
                 await this.brain.warmup();
+                this.brainReady = true;
                 this.broadcast({ type: 'brain.status', status: 'ready', message: 'Brain is ready' });
             } catch (err) {
+                this.brainReady = false;
                 logger.error('Warmup failed', 'Gateway', err);
                 this.broadcast({ type: 'brain.status', status: 'error', message: String(err) });
             }

@@ -124,7 +124,10 @@ fn start_gateway_internal(
     app: &tauri::AppHandle,
     state: &State<'_, GatewayState>,
 ) -> Result<String, String> {
-    let mut lock = state.0.lock().unwrap();
+    let mut lock = state
+        .0
+        .lock()
+        .map_err(|e| format!("Failed to acquire gateway state lock: {}", e))?;
     if lock.is_some() {
         return Ok("Gateway already running".to_string());
     }
@@ -204,7 +207,10 @@ async fn start_gateway(
 
 #[tauri::command]
 async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> {
-    let mut lock = state.0.lock().unwrap();
+    let mut lock = state
+        .0
+        .lock()
+        .map_err(|e| format!("Failed to acquire gateway state lock: {}", e))?;
     if let Some(mut child) = lock.take() {
         GATEWAY_PID.store(0, Ordering::SeqCst);
         let kill_result = child.kill();
@@ -534,10 +540,16 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { code, .. } = event {
                 let state = app_handle.state::<GatewayState>();
-                let mut lock = state.0.lock().unwrap();
-                if let Some(mut child) = lock.take() {
-                    GATEWAY_PID.store(0, Ordering::SeqCst);
-                    let _ = child.kill();
+                match state.0.lock() {
+                    Ok(mut lock) => {
+                        if let Some(mut child) = lock.take() {
+                            GATEWAY_PID.store(0, Ordering::SeqCst);
+                            let _ = child.kill();
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to acquire gateway state lock on exit: {}", e);
+                    }
                 }
                 std::process::exit(code.unwrap_or(0));
             }

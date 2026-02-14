@@ -49,10 +49,8 @@ find . -type d -name "documentation" -exec rm -rf {} +
 echo "==> Ultra-Pruning non-essential files..."
 find . -type f -name "*.map" -delete
 find . -type f -name "*.ts" -delete
-find . -type f -name "*.md" -delete
-find . -type f -name "*.txt" -delete
-find . -type f -name "LICENSE*" -delete
-find . -type f -name "README*" -delete
+find . -type f -name "*.md" ! -name "LICENSE*" ! -name "NOTICE*" ! -name "COPYING*" -delete
+find . -type f -name "*.txt" ! -name "LICENSE*" ! -name "NOTICE*" ! -name "COPYING*" -delete
 
 # Intelligent Pruning: Keep only binaries for the current platform/arch
 echo "==> Pruning platform-specific AI binaries..."

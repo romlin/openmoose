@@ -4,6 +4,7 @@
  */
 
 import path from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { logger } from './logger.js';
 import { config } from '../config/index.js';
 
@@ -56,8 +57,16 @@ export class EmbeddingProvider {
                 logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
                 const { pipeline, env } = await import('@huggingface/transformers');
 
-                // Set cache directory to a writable path in MOOSE_HOME
-                env.cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
+                // Ensure the cache directory exists before Transformers.js tries to write
+                const cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
+                try {
+                    mkdirSync(cacheDir, { recursive: true });
+                } catch (err) {
+                    logger.error(`Failed to create embedding cache directory: ${cacheDir}`, 'Embeddings', err);
+                    throw err;
+                }
+
+                env.cacheDir = cacheDir;
                 env.allowRemoteModels = true;
 
                 this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;

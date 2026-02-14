@@ -151,7 +151,7 @@ The desktop app lives in `app/` and is a **pnpm workspace** member. It is a Taur
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  Tauri App                                      │
 │  ┌──────────────┐    ┌────────────────────────┐ │
@@ -215,7 +215,7 @@ cargo test
 
 ### App Project Structure
 
-```
+```text
 app/
 ├── src/                    React frontend
 │   ├── App.tsx             Main component (state, WebSocket, routing)
@@ -405,7 +405,7 @@ graph TD
 
 ### Project Structure
 
-```
+```text
 openmoose/
 ├── src/                    Gateway and core logic
 │   ├── gateway/            Central HTTP/WebSocket server

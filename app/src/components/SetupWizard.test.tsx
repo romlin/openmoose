@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SetupWizard } from "./SetupWizard";
 
@@ -31,7 +31,9 @@ describe("SetupWizard", () => {
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        expect(screen.getByText("System Requirements")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.getByText("System Requirements")).toBeInTheDocument()
+        );
     });
 
     it("shows Node.js requirement info on step 2", async () => {
@@ -51,7 +53,7 @@ describe("SetupWizard", () => {
         expect(continueBtn).toBeDisabled();
     });
 
-    it("shows download error text when present", () => {
+    it("does not show download error on step 1", () => {
         render(
             <SetupWizard
                 {...defaultProps}
@@ -60,5 +62,6 @@ describe("SetupWizard", () => {
         );
         // On step 1, error isn't visible yet (shown on step 4)
         expect(screen.getByText("Welcome to OpenMoose")).toBeInTheDocument();
+        expect(screen.queryByText("Network error")).toBeNull();
     });
 });

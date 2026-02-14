@@ -22,6 +22,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const sendRetryTokenRef = useRef(0);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -262,13 +263,30 @@ function App() {
     setMessages(prev => [...prev, { id: Date.now(), role: "user", content }]);
     setIsThinking(true);
 
-    const trySend = () => {
-      if (!wsSend({ type: "agent.run", message: content })) {
-        setTimeout(trySend, 500);
+    const MAX_RETRIES = 10;
+    const token = ++sendRetryTokenRef.current;
+
+    const trySend = (attempt: number) => {
+      // Abort if a newer send has been initiated
+      if (sendRetryTokenRef.current !== token) return;
+
+      if (wsSend({ type: "agent.run", message: content })) return;
+
+      if (attempt >= MAX_RETRIES) {
+        setIsThinking(false);
+        setMessages(prev => [
+          ...prev,
+          { id: Date.now(), role: "assistant", content: "Failed to send message — connection unavailable. Please try again." }
+        ]);
+        return;
       }
+
+      // Exponential backoff: 500ms, 1s, 2s, …
+      const delay = Math.min(500 * 2 ** attempt, 5000);
+      setTimeout(() => trySend(attempt + 1), delay);
     };
 
-    trySend();
+    trySend(0);
   };
 
   const handleClearHistory = () => {

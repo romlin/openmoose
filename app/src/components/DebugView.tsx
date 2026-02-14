@@ -19,28 +19,56 @@ export function DebugView({ onBack, ws, onMenuToggle }: DebugViewProps) {
     useEffect(() => {
         invoke<StartupInfo>("get_startup_info").then(setTauriInfo).catch(console.error);
 
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            const handleMessage = (event: MessageEvent) => {
+        if (!ws) return;
+
+        let interval: ReturnType<typeof setInterval> | null = null;
+
+        const handleMessage = (event: MessageEvent) => {
+            try {
                 const data = JSON.parse(event.data);
                 if (data.type === "agent.system.info.result") {
                     setInfo(data);
                 } else if (data.type === "error") {
                     console.error("Gateway Debug Error:", data.message);
                 }
-            };
+            } catch {
+                // Ignore malformed JSON
+            }
+        };
 
-            ws.addEventListener("message", handleMessage);
-            ws.send(JSON.stringify({ type: "agent.system.info" }));
-
-            const interval = setInterval(() => {
+        const startPolling = () => {
+            if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "agent.system.info" }));
+            }
+            interval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "agent.system.info" }));
+                }
             }, 5000);
+        };
 
-            return () => {
-                ws.removeEventListener("message", handleMessage);
+        const handleOpen = () => startPolling();
+        const handleClose = () => {
+            if (interval) {
                 clearInterval(interval);
-            };
+                interval = null;
+            }
+        };
+
+        ws.addEventListener("message", handleMessage);
+        ws.addEventListener("open", handleOpen);
+        ws.addEventListener("close", handleClose);
+
+        if (ws.readyState === WebSocket.OPEN) {
+            startPolling();
         }
+
+        return () => {
+            ws.removeEventListener("message", handleMessage);
+            ws.removeEventListener("open", handleOpen);
+            ws.removeEventListener("close", handleClose);
+            if (interval) clearInterval(interval);
+        };
     }, [ws]);
 
     const handleCopy = async () => {

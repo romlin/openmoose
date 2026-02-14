@@ -6,7 +6,7 @@
     color: #f8fafc;
     background-color: #0d0d0d;
     font-synthesis: none;
-    text-rendering: optimizeLegibility;
+    text-rendering: optimizelegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
@@ -21,7 +21,7 @@
     --glass-blur: blur(20px);
     --sidebar-width: 260px;
     --content-max-width: 100%;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+    --font-mono: "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Roboto Mono", "Segoe UI Mono", monospace;
 
     /* Spacing Scale */
     --spacing-xs: 4px;
@@ -144,6 +144,11 @@ body {
     text-align: left;
     font-family: inherit;
     outline: none;
+}
+
+.nav-item:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
 }
 
 .nav-item:hover {
