@@ -53,7 +53,7 @@ export const config = {
     version,
     mooseHome,
     /** Whether the initial setup wizard has been completed. */
-    setupComplete: !!jsonConfig.setup_complete,
+    setupComplete: jsonConfig.setup_complete === true,
 
     gateway: {
         host: process.env.GATEWAY_HOST || '127.0.0.1',
