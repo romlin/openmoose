@@ -66,5 +66,6 @@ jobs:
           releaseBody: 'Automatic release'
           releaseDraft: true
           prerelease: false
+          tauriScript: pnpm tauri
           args: ${{ matrix.args }}
           projectPath: './app'

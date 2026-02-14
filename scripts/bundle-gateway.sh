@@ -90,7 +90,7 @@ rm -rf node_modules/onnxruntime-web # Slim down as we use node-native version
 
 # Clean up broken symlinks in .bin (crucial for Tauri resource bundling)
 echo "    - Cleaning broken symlinks..."
-find node_modules/.bin -xtype l -delete
+find node_modules/.bin -type l ! -exec test -e {} \; -delete
 
 # Copy browser daemon files (required by BrowserManager at runtime and for Docker build context)
 mkdir -p "$RESOURCES_DIR/runtime/browser"
