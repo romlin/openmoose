@@ -259,7 +259,7 @@ export class AgentRunner {
             onToolCall?.({ name, args });
             logger.info(`Executing tool: ${name}`, 'Runner');
 
-            let result: { success: boolean; error?: string };
+            let result: { success: boolean; result?: unknown; error?: string };
             try {
                 result = await this.registry.execute(name, args, context);
             } catch (err) {
@@ -270,7 +270,11 @@ export class AgentRunner {
             }
 
             if (result.success) {
-                logger.success(`Tool ${name} succeeded.`, 'Runner');
+                const resultStr = typeof result.result === 'string'
+                    ? result.result
+                    : (JSON.stringify(result.result) || 'undefined');
+                const truncated = resultStr.length > 120 ? `${resultStr.slice(0, 120)}...` : resultStr;
+                logger.success(`Tool ${name} succeeded: ${truncated}`, 'Runner');
             } else {
                 const safeError = typeof result.error === 'string'
                     ? result.error.slice(0, 120)

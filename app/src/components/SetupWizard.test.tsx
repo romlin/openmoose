@@ -17,6 +17,7 @@ describe("SetupWizard", () => {
         isDownloading: false,
         downloadError: null,
         onStartDownload: vi.fn(),
+        gatewayPort: 18789,
     };
 
     it("renders welcome step initially", () => {

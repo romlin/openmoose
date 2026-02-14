@@ -29,14 +29,45 @@ function imageTag(): string {
     return `${BROWSER_IMAGE_PREFIX}:${playwrightVersion() || 'latest'}`;
 }
 
-/** Run a docker command and return the exit code. Optionally pipe output to logger. */
-function dockerRun(args: string[], logTag?: string): Promise<number> {
+type DockerResult = { code: number; stdout: string; stderr: string };
+
+/**
+ * Run a docker command. With capture: true returns code + output for error surfacing;
+ * otherwise returns exit code only and can optionally log output to logger (debug).
+ */
+function runDocker(
+    args: string[],
+    options?: { logTag?: string }
+): Promise<number>;
+function runDocker(
+    args: string[],
+    options: { capture: true }
+): Promise<DockerResult>;
+function runDocker(
+    args: string[],
+    options?: { logTag?: string; capture?: true }
+): Promise<number | DockerResult> {
     return new Promise(resolve => {
         const child = spawn('docker', args);
-        child.stdout.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => { });
-        child.stderr.on('data', logTag ? d => logger.debug(`${d}`, logTag) : () => { });
-        child.on('error', () => resolve(1));
-        child.on('close', code => resolve(code ?? 1));
+        const capture = options?.capture === true;
+        let stdout = '';
+        let stderr = '';
+
+        if (capture) {
+            child.stdout.on('data', d => { stdout += d; });
+            child.stderr.on('data', d => { stderr += d; });
+        } else {
+            const logTag = options?.logTag;
+            child.stdout.on('data', logTag ? d => logger.debug(String(d), logTag) : () => { });
+            child.stderr.on('data', logTag ? d => logger.debug(String(d), logTag) : () => { });
+        }
+
+        child.on('error', () =>
+            resolve(capture ? { code: 1, stdout, stderr } : 1));
+        child.on('close', code => {
+            const exitCode = code ?? 1;
+            resolve(capture ? { code: exitCode, stdout, stderr } : exitCode);
+        });
     });
 }
 
@@ -79,9 +110,7 @@ export class BrowserManager {
         fs.mkdirSync(profileDir, { recursive: true });
         fs.mkdirSync(previewsDir, { recursive: true });
 
-        // Detect if we are running in a production bundle (e.g. from /usr/lib/openmoose)
-        // In production, daemon.js and Dockerfile are already in the image context
-        // and daemon.js is COPY'd into the image, so we don't need to bind-mount it.
+        // In production we don't bind-mount daemon.js; the image already contains it from the build.
         const isProduction = __dirname.includes('resources/gateway') || __dirname.includes('/usr/lib/openmoose');
 
         logger.info('Starting Browser Daemon...', 'BrowserManager');
@@ -113,7 +142,7 @@ export class BrowserManager {
             'node', 'daemon.js',
         );
 
-        const startCode = await dockerRun(args, 'BrowserDaemon');
+        const startCode = await runDocker(args, { logTag: 'BrowserDaemon' });
         if (startCode !== 0) {
             logger.error(`Docker run failed with exit code ${startCode}. Check if an image or container named "${BROWSER_DAEMON_CONTAINER_NAME}" already exists or if you have permissions to run Docker.`, 'BrowserManager');
             throw new Error(`Failed to start browser daemon (exit ${startCode})`);
@@ -139,7 +168,7 @@ export class BrowserManager {
     /** Stop and remove the daemon container. No-op if not found. */
     static async stop(): Promise<void> {
         // -f removes running containers, ignore error if missing
-        await dockerRun(['rm', '-f', BROWSER_DAEMON_CONTAINER_NAME]);
+        await runDocker(['rm', '-f', BROWSER_DAEMON_CONTAINER_NAME]);
     }
 
     /** 
@@ -214,26 +243,120 @@ export class BrowserManager {
 
     /**
      * Build the custom browser image if it doesn't exist locally.
-     * The image pre-installs the playwright npm package so the container
-     * starts instantly without needing network access at runtime.
+     * Pipes Dockerfile via stdin and the build context as a tar stream so
+     * snap-confined Docker (which can't read host files) works.
      */
     private static async ensureImageBuilt(): Promise<string> {
         const tag = imageTag();
 
-        const inspectCode = await dockerRun(['image', 'inspect', tag]);
+        const inspectCode = await runDocker(['image', 'inspect', tag]);
         if (inspectCode === 0) return tag;
 
         const version = playwrightVersion() || '1.58.0';
         logger.info(`Building browser image ${tag} (first time only)...`, 'BrowserManager');
 
-        const contextDir = __dirname;
-        const buildCode = await dockerRun([
-            'build', '-t', tag,
-            '--build-arg', `PW_VERSION=${version}`,
-            contextDir,
-        ], 'BrowserBuild');
+        const daemonSrc = path.join(__dirname, 'daemon.js');
+        if (!fs.existsSync(daemonSrc)) {
+            throw new Error(`Browser build files missing in ${__dirname}. Reinstall the app or run from source.`);
+        }
 
-        if (buildCode !== 0) throw new Error(`Browser image build failed (exit ${buildCode})`);
+        const dockerfileContent = [
+            `ARG PW_VERSION=${version}`,
+            'FROM mcr.microsoft.com/playwright:v${PW_VERSION}-noble',
+            'WORKDIR /app',
+            'ARG PW_VERSION',
+            'ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1',
+            'RUN npm init -y > /dev/null 2>&1 && npm install playwright@${PW_VERSION}',
+            'RUN chown -R pwuser:pwuser /app',
+            'USER pwuser',
+            'COPY daemon.js .',
+            'HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \\',
+            '  CMD node -e "fetch(\'http://localhost:4000/health\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"',
+            '',
+        ].join('\n');
+
+        const daemonContent = fs.readFileSync(daemonSrc);
+
+        const buildDocker = (): Promise<DockerResult> => {
+            return new Promise(resolve => {
+                const child = spawn('docker', [
+                    'build', '-t', tag,
+                    '--build-arg', `PW_VERSION=${version}`,
+                    '-',  // context (tar with Dockerfile inside) from stdin
+                ]);
+
+                let stdout = '';
+                let stderr = '';
+                child.stdout.on('data', d => { stdout += d; });
+                child.stderr.on('data', d => { stderr += d; });
+                child.on('error', () => resolve({ code: 1, stdout, stderr }));
+                child.on('close', code => resolve({ code: code ?? 1, stdout, stderr }));
+
+                // Build a minimal tar archive containing Dockerfile + daemon.js and pipe to stdin.
+                const tar = buildTar({
+                    'Dockerfile': Buffer.from(dockerfileContent, 'utf8'),
+                    'daemon.js': daemonContent,
+                });
+                child.stdin.write(tar);
+                child.stdin.end();
+            });
+        };
+
+        let result = await buildDocker();
+        if (result.code !== 0) {
+            logger.info('Build failed, retrying once...', 'BrowserManager');
+            result = await buildDocker();
+        }
+        if (result.code !== 0) {
+            if (result.stderr) logger.error(result.stderr.trimEnd(), 'BrowserBuild');
+            if (result.stdout) logger.info(result.stdout.trimEnd(), 'BrowserBuild');
+            throw new Error(`Browser image build failed (exit ${result.code}). Ensure Docker is running and has network access.`);
+        }
         return tag;
     }
+}
+
+/**
+ * Build a minimal POSIX tar archive (uncompressed) from a map of filename → Buffer.
+ * Avoids any external dependency; only used for the small browser image context.
+ */
+function buildTar(files: Record<string, Buffer>): Buffer {
+    const blocks: Buffer[] = [];
+    for (const [name, data] of Object.entries(files)) {
+        const header = Buffer.alloc(512, 0);
+        // name (0..100)
+        header.write(name, 0, Math.min(name.length, 100), 'utf8');
+        // mode (100..108) — 0644
+        header.write('0000644\0', 100, 8, 'utf8');
+        // uid (108..116)
+        header.write('0000000\0', 108, 8, 'utf8');
+        // gid (116..124)
+        header.write('0000000\0', 116, 8, 'utf8');
+        // size (124..136) — octal
+        header.write(data.length.toString(8).padStart(11, '0') + '\0', 124, 12, 'utf8');
+        // mtime (136..148) — current time
+        const mtime = Math.floor(Date.now() / 1000);
+        header.write(mtime.toString(8).padStart(11, '0') + '\0', 136, 12, 'utf8');
+        // typeflag (156) — '0' regular file
+        header.write('0', 156, 1, 'utf8');
+        // magic (257..263) — "ustar\0"
+        header.write('ustar\0', 257, 6, 'utf8');
+        // version (263..265) — "00"
+        header.write('00', 263, 2, 'utf8');
+
+        // checksum (148..156) — compute over header with spaces in checksum field
+        header.fill(0x20, 148, 156);
+        let chksum = 0;
+        for (let i = 0; i < 512; i++) chksum += header[i];
+        header.write(chksum.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'utf8');
+
+        blocks.push(header);
+        blocks.push(data);
+        // Pad data to 512-byte boundary
+        const remainder = data.length % 512;
+        if (remainder > 0) blocks.push(Buffer.alloc(512 - remainder, 0));
+    }
+    // Two zero blocks = end of archive
+    blocks.push(Buffer.alloc(1024, 0));
+    return Buffer.concat(blocks);
 }

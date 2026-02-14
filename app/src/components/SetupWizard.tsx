@@ -9,6 +9,7 @@ interface SetupWizardProps {
     isDownloading: boolean;
     downloadError: string | null;
     onStartDownload: () => void;
+    gatewayPort: number;
 }
 
 export function SetupWizard({
@@ -16,12 +17,15 @@ export function SetupWizard({
     downloadProgress,
     isDownloading,
     downloadError,
-    onStartDownload
+    onStartDownload,
+    gatewayPort
 }: SetupWizardProps) {
     const [step, setStep] = useState(1);
     const [nodeStatus, setNodeStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
     const [nodeVersion, setNodeVersion] = useState<string | null>(null);
     const [dockerStatus, setDockerStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
+    const [browserStatus, setBrowserStatus] = useState<"not_checked" | "checking" | "ready" | "error">("not_checked");
+    const [browserError, setBrowserError] = useState<string | null>(null);
 
     const nextStep = () => setStep(prev => prev + 1);
 
@@ -32,10 +36,13 @@ export function SetupWizard({
         if (step === 3 && dockerStatus === "not_checked") {
             checkDocker();
         }
-        if (step === 4 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
+        if (step === 4 && browserStatus === "not_checked") {
+            ensureBrowserReady();
+        }
+        if (step === 5 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
             onStartDownload();
         }
-    }, [step, nodeStatus, dockerStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
+    }, [step, nodeStatus, dockerStatus, browserStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
 
     const checkNode = async () => {
         setNodeStatus("checking");
@@ -57,6 +64,38 @@ export function SetupWizard({
         } catch (err) {
             console.error("Docker check failed:", err);
             setDockerStatus("missing");
+        }
+    };
+
+    const ensureBrowserReady = async () => {
+        setBrowserStatus("checking");
+        setBrowserError(null);
+        try {
+            await invoke("start_gateway");
+            const base = `http://127.0.0.1:${gatewayPort}`;
+            const healthUrl = `${base}/health`;
+            const browserReadyUrl = `${base}/setup/browser-ready`;
+            for (let i = 0; i < 60; i++) {
+                try {
+                    const r = await fetch(healthUrl);
+                    if (r.ok) break;
+                } catch {
+                    // Gateway not up yet
+                }
+                await new Promise((r) => setTimeout(r, 500));
+            }
+            const readyRes = await fetch(browserReadyUrl);
+            if (readyRes.ok) {
+                setBrowserStatus("ready");
+                return;
+            }
+            const body = await readyRes.json().catch(() => ({}));
+            setBrowserError(body.error || `HTTP ${readyRes.status}`);
+            setBrowserStatus("error");
+        } catch (err) {
+            console.error("Browser setup failed:", err);
+            setBrowserError(String(err));
+            setBrowserStatus("error");
         }
     };
 
@@ -138,6 +177,38 @@ export function SetupWizard({
                 )}
 
                 {step === 4 && (
+                    <div className="setup-step fadeIn">
+                        <h2>Browser Container</h2>
+                        <div className="mode-options">
+                            <div className="mode-card active">
+                                <h3>Build Sandbox Image</h3>
+                                <p>OpenMoose builds a Docker image for running browser-based skills in isolation. This runs once.</p>
+                            </div>
+                        </div>
+
+                        <div className={`docker-status ${browserStatus}`}>
+                            {browserStatus === "checking" && <p>Starting gateway and building browser image...</p>}
+                            {browserStatus === "ready" && <p>Browser container ready.</p>}
+                            {browserStatus === "error" && (
+                                <div className="error-box">
+                                    <p>Browser image build failed.</p>
+                                    <p className="setup-note">{browserError}</p>
+                                    <button className="retry-btn" onClick={ensureBrowserReady}>Retry</button>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            className="primary-btn"
+                            onClick={nextStep}
+                            disabled={browserStatus !== "ready"}
+                        >
+                            {browserStatus === "ready" ? "Continue" : "Waiting for browser container..."}
+                        </button>
+                    </div>
+                )}
+
+                {step === 5 && (
                     <div className="setup-step fadeIn">
                         <h2>Setting Up Your Moose</h2>
                         <div className="progress-container">

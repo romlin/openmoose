@@ -73,6 +73,10 @@ export const config = {
         llamaCpp: {
             modelPath: process.env.LLAMA_CPP_MODEL_PATH || path.join(mooseHome, 'models/llama-cpp/Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf'),
             gpu: validateGpu(process.env.LLAMA_CPP_GPU),
+            /** Number of layers to offload to GPU. Default to 28 (tuned for stability with 8k context). */
+            gpuLayers: process.env.LLAMA_CPP_GPU_LAYERS ? parseInt(process.env.LLAMA_CPP_GPU_LAYERS, 10) : 28,
+            /** Context size. Default to 8192 (balance between capability and VRAM). */
+            contextSize: process.env.LLAMA_CPP_CONTEXT_SIZE ? parseInt(process.env.LLAMA_CPP_CONTEXT_SIZE, 10) : 8192,
         }
     },
 

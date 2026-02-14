@@ -478,6 +478,16 @@ export class LocalGateway {
 
         app.get('/health', async (c) => c.json({ gateway: 'ok', brain: await this.brain.healthCheck() }));
 
+        /** Setup wizard: ensure browser image is built; used to gate completion until containers are ready. */
+        app.get('/setup/browser-ready', async (c) => {
+            try {
+                await BrowserManager.ensureRunning();
+                return c.json({ ok: true });
+            } catch (err) {
+                return c.json({ ok: false, error: getErrorMessage(err) }, 503);
+            }
+        });
+
         const server = serve({
             fetch: app.fetch,
             port: this.port,

@@ -6,6 +6,7 @@ import { Chat } from "./components/Chat";
 import { MemoryView } from "./components/MemoryView";
 import { DebugView } from "./components/DebugView";
 import { SetupWizard } from "./components/SetupWizard";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DEFAULT_GATEWAY_PORT } from "./lib/utils";
 import type { Message, ViewType, BrainStatus, DownloadProgress, MemoryEntry, GatewayMessage, StartupInfo } from "./lib/types";
 import "./App.css";
@@ -26,6 +27,9 @@ function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [brainStatus, setBrainStatus] = useState<BrainStatus>("ready");
+  const [gatewayPort, setGatewayPort] = useState<number>(DEFAULT_GATEWAY_PORT);
+  const [gatewayReady, setGatewayReady] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   // Port received from the Rust backend (authoritative), falls back to the default.
   const gatewayPortRef = useRef<number>(DEFAULT_GATEWAY_PORT);
@@ -92,6 +96,9 @@ function App() {
         if (payload.status) {
           setBrainStatus(payload.status);
         }
+        if (payload.status === "ready") {
+          setGatewayReady(true);
+        }
         if (payload.status === "error") {
           setDownloadError(payload.message || "Unknown error");
         }
@@ -116,14 +123,14 @@ function App() {
       ws.send(JSON.stringify({ type: "agent.history", limit: 50 }));
     };
 
-    ws.onmessage = (event) => {
+    ws.addEventListener("message", (event) => {
       try {
         const payload = JSON.parse(event.data);
         handleGatewayMessage(payload);
       } catch (err) {
         console.error("Failed to parse gateway message:", err);
       }
-    };
+    });
 
     ws.onerror = (err) => {
       console.error("WebSocket error:", err);
@@ -158,6 +165,7 @@ function App() {
 
         // Use the authoritative port from the Rust backend
         gatewayPortRef.current = info.gateway_port;
+        setGatewayPort(info.gateway_port);
 
         const name = info.model_name.replace(".gguf", "");
 
@@ -223,33 +231,39 @@ function App() {
   };
 
   const handleClearHistory = () => {
-    if (confirm("Are you sure you want to wipe all chat history? This cannot be undone.")) {
-      wsSend({ type: "agent.history.clear" });
-    }
+    setPendingConfirm({
+      message: "Are you sure you want to wipe all chat history? This cannot be undone.",
+      onConfirm: () => {
+        wsSend({ type: "agent.history.clear" });
+        setPendingConfirm(null);
+      }
+    });
   };
 
   const handleClearMemory = () => {
-    if (confirm("DANGER: This will permanently NUKE all long-term memories. Continue?")) {
-      wsSend({ type: "agent.memory.clear" });
+    setPendingConfirm({
+      message: "This will permanently delete all long-term memories. Continue?",
+      onConfirm: () => {
+        setPendingConfirm(null);
+        wsSend({ type: "agent.memory.clear" });
 
-      // Wait for result before refreshing list
-      const tempListener = (event: MessageEvent) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "agent.memory.clear.result") {
-            wsSend({ type: "agent.memory.list" });
-            ws?.removeEventListener('message', tempListener);
+        // Wait for result before refreshing list
+        const tempListener = (event: MessageEvent) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "agent.memory.clear.result") {
+              wsSend({ type: "agent.memory.list" });
+              ws?.removeEventListener('message', tempListener);
+            }
+          } catch {
+            // ignore parsing errors in temp listener
           }
-        } catch {
-          // ignore parsing errors in temp listener
-        }
-      };
+        };
 
-      ws?.addEventListener('message', tempListener);
-
-      // Safety cleanup after 5s if no response
-      setTimeout(() => ws?.removeEventListener('message', tempListener), 5000);
-    }
+        ws?.addEventListener('message', tempListener);
+        setTimeout(() => ws?.removeEventListener('message', tempListener), 5000);
+      }
+    });
   };
 
   const handleMemorySearch = (query: string, source?: "chat" | "doc") => {
@@ -282,6 +296,12 @@ function App() {
 
   return (
     <div className="app-container">
+      {setupComplete && !gatewayReady && (
+        <div className="gateway-overlay">
+          <span className="gateway-spinner">🫎</span>
+          <p className="gateway-label">Starting gateway...</p>
+        </div>
+      )}
       {!setupComplete && (
         <SetupWizard
           onComplete={handleSetupComplete}
@@ -289,6 +309,7 @@ function App() {
           isDownloading={isDownloading}
           downloadError={downloadError}
           onStartDownload={startDownload}
+          gatewayPort={gatewayPort}
         />
       )}
       <Sidebar
@@ -326,6 +347,13 @@ function App() {
           onBack={() => setView("chat")}
           ws={ws}
           onMenuToggle={() => setSidebarOpen(true)}
+        />
+      )}
+      {pendingConfirm && (
+        <ConfirmDialog
+          message={pendingConfirm.message}
+          onConfirm={pendingConfirm.onConfirm}
+          onCancel={() => setPendingConfirm(null)}
         />
       )}
     </div>

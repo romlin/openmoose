@@ -8,6 +8,7 @@ RESOURCES_DIR="$REPO_ROOT/app/src-tauri/resources/gateway"
 
 echo "==> Compiling Gateway (tsc)..."
 cd "$REPO_ROOT"
+rm -rf "$REPO_ROOT/dist"
 npx tsc
 
 echo "==> Preparing resource directory..."
@@ -93,12 +94,10 @@ rm -rf node_modules/onnxruntime-web # Slim down as we use node-native version
 echo "    - Cleaning broken symlinks..."
 find node_modules/.bin -xtype l -delete
 
-# Copy browser daemon files (required by BrowserManager)
-if [ -d "$REPO_ROOT/src/runtime/browser" ]; then
-  mkdir -p "$RESOURCES_DIR/runtime/browser"
-  cp "$REPO_ROOT/src/runtime/browser/daemon.js" "$RESOURCES_DIR/runtime/browser/" 2>/dev/null || true
-  cp "$REPO_ROOT/src/runtime/browser/Dockerfile" "$RESOURCES_DIR/runtime/browser/" 2>/dev/null || true
-fi
+# Copy browser daemon files (required by BrowserManager at runtime and for Docker build context)
+mkdir -p "$RESOURCES_DIR/runtime/browser"
+cp "$REPO_ROOT/src/runtime/browser/daemon.js" "$RESOURCES_DIR/runtime/browser/"
+cp "$REPO_ROOT/src/runtime/browser/Dockerfile" "$RESOURCES_DIR/runtime/browser/"
 
 # Copy portable skills directory (required for production parity)
 if [ -d "$REPO_ROOT/skills" ]; then

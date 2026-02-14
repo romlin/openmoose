@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { formatBytes, calcProgressPercent, copyToClipboard } from "../lib/utils";
 import type { Message, DownloadProgress, BrainStatus } from "../lib/types";
-import { Clipboard, Check, Brain, Cpu } from "lucide-react";
+import { Clipboard, Check, Brain } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 
 interface ChatProps {
@@ -122,12 +122,12 @@ export function Chat({ messages, onSend, isThinking, isDownloading, downloadProg
                 ))}
                 {(isThinking || brainStatus === "warming_up") && (
                     <div className="message moose thinking fadeIn">
-                        <div className="moose-spinner">
-                            <Cpu size={18} className="spin-slow" />
-                        </div>
-                        {brainStatus === "warming_up"
-                            ? "Loading 12GB local brain into RAM..."
-                            : (messages[messages.length - 1]?.role === "assistant" ? "Moose is writing..." : "Moose is thinking...")}
+                        <span className="thinking-moose">🫎</span>
+                        <span>
+                            {brainStatus === "warming_up"
+                                ? "Loading 12GB local brain into RAM..."
+                                : (messages[messages.length - 1]?.role === "assistant" ? "Moose is writing..." : "Moose is thinking...")}
+                        </span>
                     </div>
                 )}
             </div>

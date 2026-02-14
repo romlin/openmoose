@@ -3,8 +3,12 @@ use reqwest::header::RANGE;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+
+/// Gateway process ID for the SIGINT handler (kill and exit on Ctrl+C).
+static GATEWAY_PID: AtomicU32 = AtomicU32::new(0);
 
 // ── Constants (single source of truth for model identity) ──────────────
 const MODEL_FILENAME: &str = "Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf";
@@ -146,6 +150,7 @@ fn start_gateway_internal(
 
         match output {
             Ok(child) => {
+                GATEWAY_PID.store(child.id(), Ordering::SeqCst);
                 *lock = Some(child);
                 Ok("Gateway started (node)".to_string())
             }
@@ -176,6 +181,7 @@ fn start_gateway_internal(
 
         match output {
             Ok(child) => {
+                GATEWAY_PID.store(child.id(), Ordering::SeqCst);
                 *lock = Some(child);
                 Ok(format!("Gateway started ({})", cmd))
             }
@@ -200,6 +206,7 @@ async fn start_gateway(
 async fn stop_gateway(state: State<'_, GatewayState>) -> Result<String, String> {
     let mut lock = state.0.lock().unwrap();
     if let Some(mut child) = lock.take() {
+        GATEWAY_PID.store(0, Ordering::SeqCst);
         let kill_result = child.kill();
         match kill_result {
             Ok(_) => Ok("Gateway stopped".to_string()),
@@ -493,6 +500,26 @@ pub fn run() {
             let handle = app.handle().clone();
             let state = app.state::<GatewayState>();
 
+            // So one Ctrl+C kills gateway and exits immediately (no waiting for Node cleanup).
+            let _ = ctrlc::set_handler(move || {
+                let pid = GATEWAY_PID.load(Ordering::SeqCst);
+                if pid != 0 {
+                    #[cfg(unix)]
+                    {
+                        let _ = std::process::Command::new("kill")
+                            .args(["-9", pid.to_string().as_str()])
+                            .output();
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/PID", pid.to_string().as_str(), "/F"])
+                            .output();
+                    }
+                }
+                std::process::exit(0);
+            });
+
             // Check if setup is complete
             if let Ok(config) = get_config_internal(&handle) {
                 if config.setup_complete {
@@ -502,8 +529,19 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { code, .. } = event {
+                let state = app_handle.state::<GatewayState>();
+                let mut lock = state.0.lock().unwrap();
+                if let Some(mut child) = lock.take() {
+                    GATEWAY_PID.store(0, Ordering::SeqCst);
+                    let _ = child.kill();
+                }
+                std::process::exit(code.unwrap_or(0));
+            }
+        });
 }
 
 #[cfg(test)]
