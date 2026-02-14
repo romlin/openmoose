@@ -24,20 +24,20 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust
-        uses: swatinem/rust-cache@8cbdedb5103daa674dcf46d3590fe06a76645684 # v2.8.0
+        uses: swatinem/rust-cache@v2
         with:
           # Match the project structure
           workspaces: './app/src-tauri -> target'
@@ -46,7 +46,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: pnpm setup:linux
 
-      - uses: pnpm/action-setup@a3252b78c470c02df0738055eca6f68f32926fbb # v4.0.0
+      - uses: pnpm/action-setup@v4
         with:
           version: 10
 
@@ -54,7 +54,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build and Package
-        uses: tauri-apps/tauri-action@38e5b41097fa6654f5945ed8b98b964344ab4f18 # v0.5.15
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
