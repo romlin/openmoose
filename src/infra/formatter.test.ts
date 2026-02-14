@@ -22,19 +22,19 @@ describe('Formatter.cleanForUser', () => {
         expect(Formatter.cleanForUser(input)).toBe('visible');
     });
 
-    it('strips markdown bold', () => {
+    it('preserves markdown bold', () => {
         const input = 'This is **bold** text';
-        expect(Formatter.cleanForUser(input)).toBe('This is bold text');
+        expect(Formatter.cleanForUser(input)).toBe('This is **bold** text');
     });
 
-    it('strips markdown italic', () => {
+    it('preserves markdown italic', () => {
         const input = 'This is *italic* text';
-        expect(Formatter.cleanForUser(input)).toBe('This is italic text');
+        expect(Formatter.cleanForUser(input)).toBe('This is *italic* text');
     });
 
-    it('strips markdown headers', () => {
+    it('preserves markdown headers', () => {
         const input = '## Header\nContent';
-        expect(Formatter.cleanForUser(input)).toBe('Header\nContent');
+        expect(Formatter.cleanForUser(input)).toBe('## Header\nContent');
     });
 
     it('removes "Assistant:" prefix', () => {
@@ -99,11 +99,11 @@ describe('StreamingFormatter', () => {
         expect(result).toBe('Hello');
     });
 
-    it('strips markdown in streaming output', () => {
+    it('preserves markdown in streaming output', () => {
         const sf = new StreamingFormatter();
         const result = sf.process('This is **bold** and *italic*');
-        expect(result).not.toContain('**');
-        expect(result).not.toContain('*');
+        expect(result).toContain('**');
+        expect(result).toContain('*');
     });
 
     it('flush returns cleaned remaining buffer', () => {

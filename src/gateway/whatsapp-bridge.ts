@@ -15,7 +15,7 @@ type ProcessFn = (
     message: string,
     history: { role: 'user' | 'assistant'; content: string }[],
     saveHistory: (h: { role: 'user' | 'assistant'; content: string }[]) => void,
-) => Promise<string>;
+) => Promise<{ text: string; source: string }>;
 
 /**
  * Attach message, QR, and ready handlers to the WhatsApp manager.
@@ -47,8 +47,8 @@ export function setupWhatsAppBridge(
                 (h) => sessions.set(msg.jid, h),
             );
 
-            if (response) {
-                await whatsapp.sendMessage(msg.jid, response);
+            if (response?.text) {
+                await whatsapp.sendMessage(msg.jid, response.text);
             }
         } catch (error) {
             logger.error('Error processing WhatsApp message', 'WhatsApp', error);

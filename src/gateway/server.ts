@@ -6,12 +6,14 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { LocalBrain } from '../agents/brain.js';
 import { LocalAudio } from '../infra/audio.js';
 import { LocalMemory } from '../infra/memory.js';
 import { LocalSandbox } from '../infra/sandbox.js';
 import { WhatsAppManager } from '../infra/whatsapp.js';
+import { HistoryManager } from '../infra/history.js';
 import { AgentRunner } from '../runtime/runner.js';
 import { SkillRegistry } from '../runtime/registry.js';
 import { loadSkillEntries, buildSkillsPrompt } from '../runtime/skill-loader.js';
@@ -30,7 +32,13 @@ import { getErrorMessage } from '../infra/errors.js';
 /** Zod schema for validating incoming WebSocket payloads. */
 const WsPayloadSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('agent.run'), message: z.string(), audio: z.boolean().optional() }),
+    z.object({ type: z.literal('agent.history'), limit: z.number().optional() }),
+    z.object({ type: z.literal('agent.history.clear') }),
+    z.object({ type: z.literal('agent.memory.list'), limit: z.number().optional(), source: z.enum(['chat', 'doc']).optional() }),
+    z.object({ type: z.literal('agent.memory.search'), query: z.string(), limit: z.number().optional(), source: z.enum(['chat', 'doc']).optional() }),
+    z.object({ type: z.literal('agent.memory.clear') }),
     z.object({ type: z.literal('whatsapp.send'), name: z.string(), text: z.string() }),
+    z.object({ type: z.literal('agent.system.info') }),
 ]);
 
 /**
@@ -41,6 +49,13 @@ const WsPayloadSchema = z.discriminatedUnion('type', [
 export class LocalGateway {
     private wss: WebSocketServer;
     private port: number;
+    private readonly allowedOrigins = [
+        'tauri://localhost',
+        'http://tauri.localhost',
+        'tauri://com.openmoose.chat',
+        'http://localhost:1420',
+        'http://localhost:5173'
+    ];
 
     private memory: LocalMemory;
     private sandbox: LocalSandbox;
@@ -50,9 +65,11 @@ export class LocalGateway {
     private skillRegistry = new SkillRegistry();
     private scheduler!: TaskScheduler;
     private whatsapp!: WhatsAppManager;
+    private history = new HistoryManager();
     private sessions = new Map<WebSocket, { role: 'user' | 'assistant', content: string }[]>();
     private whatsappSessions = new Map<string, { role: 'user' | 'assistant', content: string }[]>();
     private skillsPrompt = '';
+    private brainReady = false;
 
     constructor(port: number = config.gateway.port) {
         this.port = port;
@@ -100,25 +117,45 @@ export class LocalGateway {
 
         const payload = parsed.data;
 
-        if (payload.type === 'agent.run') {
-            const response = await this._processAgentRequest(
-                payload.message,
-                this.sessions.get(ws) || [],
-                (history) => this.sessions.set(ws, history),
-                {
-                    onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
-                    onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
-                    onToolResult: (payload) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...payload }))
+        try {
+            if (payload.type === 'agent.run') {
+                if (!this.brainReady) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Brain is still warming up. Please wait.' }));
+                    return;
                 }
-            );
+                const response = await this._processAgentRequest(
+                    payload.message,
+                    this.sessions.get(ws) || [],
+                    (history) => this.sessions.set(ws, history),
+                    {
+                        onDelta: (text) => ws.send(JSON.stringify({ type: 'agent.delta', text })),
+                        onToolCall: (tool) => ws.send(JSON.stringify({ type: 'agent.tool_call', ...tool })),
+                        onToolResult: (p) => ws.send(JSON.stringify({ type: 'agent.tool_result', ...p }))
+                    }
+                );
 
-            if (payload.audio && response) {
-                const audioBuffer = await this.audio.generateWav(response);
-                ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
-            }
-            ws.send(JSON.stringify({ type: 'agent.final' }));
-        } else if (payload.type === 'whatsapp.send') {
-            try {
+                if (payload.audio && response?.text) {
+                    const audioBuffer = await this.audio.generateWav(response.text);
+                    ws.send(JSON.stringify({ type: 'agent.audio', audio: audioBuffer.toString('base64') }));
+                }
+                ws.send(JSON.stringify({ type: 'agent.final', source: response?.source }));
+            } else if (payload.type === 'agent.history') {
+                const history = await this.history.loadLast(payload.limit || 50);
+                ws.send(JSON.stringify({ type: 'agent.history.result', history }));
+            } else if (payload.type === 'agent.history.clear') {
+                await this.history.clear();
+                this.sessions.delete(ws);
+                ws.send(JSON.stringify({ type: 'agent.history.clear.result', success: true }));
+            } else if (payload.type === 'agent.memory.list') {
+                const memories = await this.memory.list(payload.limit || 100, payload.source);
+                ws.send(JSON.stringify({ type: 'agent.memory.list.result', memories }));
+            } else if (payload.type === 'agent.memory.search') {
+                const memories = await this.memory.search(payload.query, payload.limit || 50, payload.source);
+                ws.send(JSON.stringify({ type: 'agent.memory.search.result', memories }));
+            } else if (payload.type === 'agent.memory.clear') {
+                await this.memory.clear();
+                ws.send(JSON.stringify({ type: 'agent.memory.clear.result', success: true }));
+            } else if (payload.type === 'whatsapp.send') {
                 const contact = await (await import('../infra/contacts.js')).ContactsManager.lookup(payload.name);
                 if (!contact) {
                     ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: `Contact ${payload.name} not found` }));
@@ -126,9 +163,51 @@ export class LocalGateway {
                 }
                 await this.whatsapp.sendMessage(contact.jid, payload.text);
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: true, message: `Message sent to ${contact.name}` }));
-            } catch (err) {
-                ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: false, error: String(err) }));
+            } else if (payload.type === 'agent.system.info') {
+                try {
+                    const info = {
+                        type: 'agent.system.info.result',
+                        cpu: process.cpuUsage(),
+                        memory: process.memoryUsage(),
+                        uptime: process.uptime(),
+                        platform: process.platform,
+                        arch: process.arch,
+                        version: process.version,
+                        brain: {
+                            provider: config.brain.provider,
+                            model: getModelName(),
+                            gpu: config.brain.llamaCpp.gpu || 'none',
+                            status: await this.brain.healthCheck(),
+                        },
+                        skills: {
+                            builtin: this.skillRegistry.getAll().map(s => s.name),
+                            portable: await (async () => {
+                                const skillsDir = config.skills.portableDir;
+                                try {
+                                    if (!existsSync(skillsDir)) return [];
+                                    const files = await readdir(skillsDir);
+                                    return files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+                                        .map(f => path.basename(f, path.extname(f)));
+                                } catch { return []; }
+                            })()
+                        },
+                        scheduler: {
+                            status: 'active',
+                            pollInterval: config.scheduler.pollIntervalMs
+                        },
+                        browser: {
+                            status: 'daemon active'
+                        }
+                    };
+                    ws.send(JSON.stringify(info));
+                } catch (err) {
+                    logger.error('Failed to collect system info', 'Gateway', err);
+                    ws.send(JSON.stringify({ type: 'error', message: `Failed to collect system info: ${getErrorMessage(err)}` }));
+                }
             }
+        } catch (err) {
+            logger.error(`Error handling WebSocket message (${payload.type})`, 'Gateway', err);
+            ws.send(JSON.stringify({ type: 'error', message: `Gateway Error: ${getErrorMessage(err)}` }));
         }
     }
 
@@ -141,8 +220,8 @@ export class LocalGateway {
             onToolCall?: (payload: { name: string; args: Record<string, unknown> }) => void,
             onToolResult?: (payload: { name: string; success: boolean; error?: string }) => void
         } = {}
-    ): Promise<string> {
-        const fullResponse = await this.runner.run(message, {
+    ): Promise<{ text: string; source: string }> {
+        const result = await this.runner.run(message, {
             onDelta: callbacks.onDelta || (() => { }),
             onToolCall: callbacks.onToolCall,
             onToolResult: callbacks.onToolResult
@@ -150,20 +229,30 @@ export class LocalGateway {
 
         const updatedHistory = [...history,
         { role: 'user' as const, content: message },
-        { role: 'assistant' as const, content: fullResponse }
+        { role: 'assistant' as const, content: result.text }
         ].slice(-config.gateway.maxHistoryLength);
 
+        // Persist to disk
+        await this.history.append('user', message);
+        await this.history.append('assistant', result.text, result.source);
+
         saveHistory(updatedHistory);
-        return fullResponse;
+        return result;
     }
 
-    /** Boot the gateway: resolve port conflicts, init all services, and start listening. */
+    /** Start all gateway services and the HTTP/WS server. */
     public async start() {
-        printBanner();
+        printBanner(config.version);
+        logger.info(`Starting gateway on ${config.gateway.host}:${this.port}`, 'Gateway');
 
-        await this.resolvePortConflict();
-        await this.initServices();
-        this.startHttpServer();
+        try {
+            await this.resolvePortConflict();
+            await this.initServices();
+            this.startHttpServer();
+        } catch (err) {
+            logger.error(`Gateway startup failed: ${getErrorMessage(err)}`, 'Gateway');
+            process.exit(1);
+        }
 
         // WhatsApp: connect if authenticated, skip otherwise
         const waAuthExists = existsSync(path.join(config.whatsapp.authDir, 'creds.json'));
@@ -188,19 +277,51 @@ export class LocalGateway {
 
         if (pid) {
             logger.info(`Process ID: ${pid}`, 'Gateway');
-            const shouldKill = await askConfirm(`Kill existing process and restart? (y/n): `);
+
+            // When running headlessly (e.g. spawned by the desktop app),
+            // require explicit opt-in via env var to auto-kill, otherwise fail.
+            const isInteractive = process.stdin.isTTY === true;
+            const autoKill = process.env.AUTO_KILL_GATEWAY === 'true';
+
+            let shouldKill = false;
+
+            if (isInteractive) {
+                shouldKill = await askConfirm(`Kill existing process and restart? (y/n): `);
+            } else if (autoKill) {
+                logger.info(`Non-interactive mode: AUTO_KILL_GATEWAY is set, killing process ${pid}`, 'Gateway');
+                shouldKill = true;
+            } else {
+                logger.warn(`Port ${this.port} is in use by process ${pid}.`, 'Gateway');
+                logger.warn(`Run with AUTO_KILL_GATEWAY=true or kill the process manually.`, 'Gateway');
+                shouldKill = false; // logic below handles exit
+            }
 
             if (shouldKill) {
                 if (killProcess(pid)) {
                     logger.success(`Killed process ${pid}`, 'Gateway');
-                    await new Promise(r => setTimeout(r, config.gateway.portKillDelayMs));
+
+                    // Poll until the port is actually free, with a timeout.
+                    // This prevents EADDRINUSE if the OS or process cleanup is slow.
+                    const timeout = 5000;
+                    const interval = 200;
+                    let elapsed = 0;
+
+                    while (await isPortInUse(this.port) && elapsed < timeout) {
+                        await new Promise(r => setTimeout(r, interval));
+                        elapsed += interval;
+                    }
+
+                    if (await isPortInUse(this.port)) {
+                        logger.error(`Port ${this.port} is still in use after ${timeout / 1000}s.`, 'Gateway');
+                        process.exit(1);
+                    }
                 } else {
                     logger.error(`Failed to kill process ${pid}. Try manually: kill -9 ${pid}`, 'Gateway');
                     process.exit(1);
                 }
             } else {
                 logger.info('Aborted.', 'Gateway');
-                process.exit(0);
+                process.exit(1); // Exit 1 if we couldn't start
             }
         } else {
             logger.error(`Could not find the process using port ${this.port}.`, 'Gateway');
@@ -220,7 +341,7 @@ export class LocalGateway {
     }
 
     private async initMemory() {
-        const docsDir = path.join(process.cwd(), 'docs');
+        const docsDir = path.join(config.mooseHome, 'docs');
         try { await this.memory.syncDocs(docsDir); } catch (err) {
             logger.error('Document sync failed', 'Gateway', err);
         }
@@ -231,14 +352,18 @@ export class LocalGateway {
         await this.skillRegistry.loadDefaults();
         await this.skillRegistry.loadExtensions(config.skills.customDir);
 
-        const skillsDir = path.join(process.cwd(), 'skills');
-        const skillEntries = await loadSkillEntries(skillsDir);
-        this.skillsPrompt = buildSkillsPrompt(skillEntries);
+        const portableDir = config.skills.portableDir;
+        if (existsSync(portableDir)) {
+            const skillEntries = await loadSkillEntries(portableDir);
+            this.skillsPrompt = buildSkillsPrompt(skillEntries);
+        }
 
         let yamlCount = 0;
         try {
-            const files = await readdir(skillsDir);
-            yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
+            if (existsSync(portableDir)) {
+                const files = await readdir(portableDir);
+                yamlCount = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml')).length;
+            }
         } catch { /* skills dir may not exist */ }
 
         printStatus('Skills', `${this.skillRegistry.getAll().length} built-in · ${yamlCount} portable`);
@@ -249,12 +374,13 @@ export class LocalGateway {
     }
 
     private createScheduler() {
-        const dataDir = path.join(process.cwd(), '.moose/data');
+        const dataDir = path.join(config.mooseHome, 'data');
         this.scheduler = new TaskScheduler(dataDir, {
             pollInterval: config.scheduler.pollIntervalMs,
             onTaskRun: async (task) => {
                 logger.info(`Running task: ${task.name}`, 'Scheduler');
-                return await this.runner.run(task.prompt, { onDelta: () => { }, onToolCall: () => { } });
+                const result = await this.runner.run(task.prompt, { onDelta: () => { }, onToolCall: () => { } });
+                return result.text;
             }
         });
     }
@@ -271,6 +397,30 @@ export class LocalGateway {
             : `${config.brain.provider} · ${config.brain.llamaCpp.gpu} · ${modelName}`;
 
         printStatus('Brain', brainStatus);
+
+        // Async warmup with status broadcast
+        (async () => {
+            try {
+                this.brainReady = false;
+                this.broadcast({ type: 'brain.status', status: 'warming_up', message: 'Loading model into RAM...' });
+                await this.brain.warmup();
+                this.brainReady = true;
+                this.broadcast({ type: 'brain.status', status: 'ready', message: 'Brain is ready' });
+            } catch (err) {
+                this.brainReady = false;
+                logger.error('Warmup failed', 'Gateway', err);
+                this.broadcast({ type: 'brain.status', status: 'error', message: String(err) });
+            }
+        })();
+    }
+
+    private broadcast(payload: Record<string, unknown>) {
+        const msg = JSON.stringify(payload);
+        for (const client of this.wss.clients) {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(msg);
+            }
+        }
     }
 
     private async startScheduler() {
@@ -329,14 +479,46 @@ export class LocalGateway {
 
     private startHttpServer() {
         const app = new Hono();
+
+        app.use('*', cors({
+            origin: this.allowedOrigins,
+            allowMethods: ['GET', 'POST', 'OPTIONS'],
+        }));
+
         app.get('/health', async (c) => c.json({ gateway: 'ok', brain: await this.brain.healthCheck() }));
-        const server = serve({ fetch: app.fetch, port: this.port });
+
+        /** Setup wizard: ensure browser image is built; used to gate completion until containers are ready. */
+        app.get('/setup/browser-ready', async (c) => {
+            try {
+                await BrowserManager.ensureRunning();
+                return c.json({ ok: true });
+            } catch (err) {
+                return c.json({ ok: false, error: getErrorMessage(err) }, 503);
+            }
+        });
+
+        const server = serve({
+            fetch: app.fetch,
+            port: this.port,
+            hostname: config.gateway.host
+        });
         server.on('upgrade', (req, socket, head) => {
+            const origin = req.headers.origin || '';
+
+            if (origin && !this.allowedOrigins.includes(origin)) {
+                logger.warn(`Unauthorized WebSocket upgrade attempt from origin: "${origin}"`, 'Gateway');
+                socket.destroy();
+                return;
+            }
+
             this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit('connection', ws, req));
         });
     }
 }
 
-if (import.meta.url.endsWith('server.ts')) {
-    new LocalGateway().start();
+if (import.meta.url.endsWith('server.ts') || import.meta.url.endsWith('server.js')) {
+    new LocalGateway().start().catch((err) => {
+        logger.error('Failed to start Gateway', 'Gateway', err);
+        process.exit(1);
+    });
 }

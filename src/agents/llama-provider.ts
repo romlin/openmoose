@@ -5,8 +5,16 @@
 
 import { config } from '../config/index.js';
 import { logger } from '../infra/logger.js';
+import { getErrorMessage } from '../infra/errors.js';
 import type { OpenAIMessage, OpenAITool, ToolCall, ChatResult } from './types.js';
 import type { BrainProvider } from './providers.js';
+
+/** Fallback context sizes to try when the requested size exceeds available VRAM. */
+const CONTEXT_SIZE_FALLBACKS = [8192, 4096, 2048, 1024];
+
+function isVramContextSizeError(err: unknown): boolean {
+    return /context size.*too large for the available vram/i.test(getErrorMessage(err));
+}
 
 export class LlamaProvider implements BrainProvider {
     private llama?: import('node-llama-cpp').Llama;
@@ -16,6 +24,12 @@ export class LlamaProvider implements BrainProvider {
 
     private async ensureInitialized() {
         if (this.llamaChat) return;
+
+        const requestedSize = config.brain.llamaCpp.contextSize;
+        const sizesToTry = [
+            requestedSize,
+            ...CONTEXT_SIZE_FALLBACKS.filter(s => s < requestedSize)
+        ];
 
         try {
             const { getLlama, LlamaChat, LlamaLogLevel } = await import('node-llama-cpp');
@@ -31,13 +45,32 @@ export class LlamaProvider implements BrainProvider {
                 }
             });
             this.llamaModel = await this.llama.loadModel({
-                modelPath: config.brain.llamaCpp.modelPath
+                modelPath: config.brain.llamaCpp.modelPath,
+                gpuLayers: config.brain.llamaCpp.gpuLayers
             });
-            this.llamaContext = await this.llamaModel.createContext();
-            this.llamaChat = new LlamaChat({
-                contextSequence: this.llamaContext.getSequence()
-            });
-            logger.info(`node-llama-cpp initialized with model: ${config.brain.llamaCpp.modelPath}`, 'Brain');
+
+            let lastErr: unknown;
+            for (const contextSize of sizesToTry) {
+                try {
+                    this.llamaContext = await this.llamaModel.createContext({ contextSize });
+                    this.llamaChat = new LlamaChat({
+                        contextSequence: this.llamaContext.getSequence()
+                    });
+                    if (contextSize !== requestedSize) {
+                        logger.info(`Using context size ${contextSize} (${requestedSize} exceeded VRAM)`, 'Brain');
+                    }
+                    logger.info(`node-llama-cpp initialized with model: ${config.brain.llamaCpp.modelPath}`, 'Brain');
+                    return;
+                } catch (err) {
+                    lastErr = err;
+                    if (isVramContextSizeError(err) && sizesToTry.indexOf(contextSize) < sizesToTry.length - 1) {
+                        logger.info(`Context size ${contextSize} too large for VRAM, trying smaller...`, 'Brain');
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+            throw lastErr;
         } catch (err) {
             logger.error('Failed to initialize node-llama-cpp', 'Brain', err);
             throw new Error(`Inference engine initialization failed: ${String(err)}`);
@@ -58,23 +91,9 @@ export class LlamaProvider implements BrainProvider {
             functions: Object.keys(functions).length > 0 ? functions : undefined
         });
 
-        const toolCalls: ToolCall[] = [];
-        if (response.functionCalls) {
-            for (const fc of response.functionCalls) {
-                toolCalls.push({
-                    id: `call_${Math.random().toString(36).slice(2)}`,
-                    type: 'function',
-                    function: {
-                        name: fc.functionName,
-                        arguments: JSON.stringify(fc.params)
-                    }
-                });
-            }
-        }
-
         return {
             content: response.response,
-            toolCalls,
+            toolCalls: this.mapFunctionCallsToToolCalls(response.functionCalls),
             finishReason: response.metadata.stopReason === 'functionCalls' ? 'tool_calls' : 'stop',
         };
     }
@@ -110,20 +129,7 @@ export class LlamaProvider implements BrainProvider {
             onTextChunk: (chunk: string) => push(chunk),
             functions: Object.keys(functions).length > 0 ? functions : undefined
         }).then((response) => {
-            const toolCalls: ToolCall[] = [];
-            if (response.functionCalls) {
-                for (const fc of response.functionCalls) {
-                    toolCalls.push({
-                        id: `call_${Math.random().toString(36).slice(2)}`,
-                        type: 'function',
-                        function: {
-                            name: fc.functionName,
-                            arguments: JSON.stringify(fc.params)
-                        }
-                    });
-                }
-            }
-
+            const toolCalls = this.mapFunctionCallsToToolCalls(response.functionCalls);
             if (toolCalls.length > 0) {
                 push(`__TOOL_CALLS__${JSON.stringify(toolCalls)}`);
             }
@@ -157,6 +163,26 @@ export class LlamaProvider implements BrainProvider {
             model: config.brain.llamaCpp.modelPath,
             modelInstalled: exists
         };
+    }
+
+    async warmup() {
+        logger.info('Warming up local brain...', 'Brain');
+        await this.ensureInitialized();
+    }
+
+    /** Map node-llama-cpp functionCalls to the shared ToolCall shape. */
+    private mapFunctionCallsToToolCalls(
+        functionCalls: Array<{ functionName: string; params: Record<string, unknown> }> | undefined
+    ): ToolCall[] {
+        if (!functionCalls?.length) return [];
+        return functionCalls.map(fc => ({
+            id: `call_${Math.random().toString(36).slice(2)}`,
+            type: 'function' as const,
+            function: {
+                name: fc.functionName,
+                arguments: JSON.stringify(fc.params)
+            }
+        }));
     }
 
     private parseMessages(messages: OpenAIMessage[]) {

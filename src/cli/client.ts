@@ -192,7 +192,9 @@ export class MooseClient {
             }
 
             case 'agent.tool_result':
-                if (payload.success !== true && payload.error) {
+                if (payload.success) {
+                    process.stdout.write(chalk.dim('↳ ') + chalk.green('success') + '\n');
+                } else if (payload.error) {
                     process.stdout.write(chalk.dim('↳ ') + chalk.red('failed: ' + payload.error) + '\n');
                 }
                 break;

@@ -1,5 +1,6 @@
 packages:
   - .
+  - app
 
 ignoredBuiltDependencies:
   - onnxruntime-node

@@ -10,6 +10,7 @@ export interface BrainProvider {
     chat(messages: OpenAIMessage[], tools?: OpenAITool[]): Promise<ChatResult>;
     chatStream(messages: OpenAIMessage[], tools?: OpenAITool[]): AsyncGenerator<{ content?: string; toolCalls?: ToolCall[]; done: boolean }>;
     healthCheck(): Promise<unknown>;
+    warmup(): Promise<void>;
 }
 
 export { MistralProvider } from './mistral-provider.js';

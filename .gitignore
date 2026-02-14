@@ -25,3 +25,7 @@ Thumbs.db
 
 # Models
 models/
+
+# Tools
+tools/46elks-bridge/venv/
+tools/46elks-bridge/.env

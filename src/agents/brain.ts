@@ -105,4 +105,9 @@ export class LocalBrain {
       return { ok: false, error: String(error) };
     }
   }
+
+  /** Pre-warm the inference engine. */
+  async warmup() {
+    await this.provider.warmup();
+  }
 }

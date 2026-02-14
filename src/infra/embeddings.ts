@@ -3,7 +3,10 @@
  * Handles model loading and vector generation.
  */
 
+import path from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { logger } from './logger.js';
+import { config } from '../config/index.js';
 
 // Define a type for the pipeline to avoid 'any'
 export type FeatureExtractionPipeline = (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
@@ -32,6 +35,8 @@ export class EmbeddingProvider {
         return instance;
     }
 
+    private initPromise: Promise<void> | null = null;
+
     async getEmbedding(text: string): Promise<number[]> {
         await this.ensureInitialized();
         const output = await this.extractor!(text, { pooling: 'mean', normalize: true });
@@ -41,14 +46,39 @@ export class EmbeddingProvider {
     private async ensureInitialized() {
         if (this.extractor) return;
 
-        try {
-            logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
-            const { pipeline } = await import('@huggingface/transformers');
-            this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
-            logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
-        } catch (err) {
-            logger.error('Failed to initialize embedding engine', 'Embeddings', err);
-            throw err;
+        // If initialization is already in progress, wait for it
+        if (this.initPromise) {
+            await this.initPromise;
+            return;
         }
+
+        this.initPromise = (async () => {
+            try {
+                logger.info(`Loading embedding model ${this.modelName} (first load may download ~80 MB)...`, 'Embeddings');
+                const { pipeline, env } = await import('@huggingface/transformers');
+
+                // Ensure the cache directory exists before Transformers.js tries to write
+                const cacheDir = path.join(config.mooseHome, 'cache', 'transformers');
+                try {
+                    mkdirSync(cacheDir, { recursive: true });
+                } catch (err) {
+                    logger.error(`Failed to create embedding cache directory: ${cacheDir}`, 'Embeddings', err);
+                    throw err;
+                }
+
+                env.cacheDir = cacheDir;
+                env.allowRemoteModels = true;
+
+                this.extractor = (await pipeline('feature-extraction', this.modelName, { dtype: 'fp32' })) as unknown as FeatureExtractionPipeline;
+                logger.success(`Embedding engine ready: ${this.modelName}`, 'Embeddings');
+            } catch (err) {
+                logger.error('Failed to initialize embedding engine', 'Embeddings', err);
+                throw err;
+            } finally {
+                this.initPromise = null;
+            }
+        })();
+
+        await this.initPromise;
     }
 }

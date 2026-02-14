@@ -50,7 +50,7 @@ Text-to-speech uses Supertonic 2, a high-performance ONNX model that generates a
 
 The router pre-computes embeddings for skill examples at startup. When a message arrives, it computes the message embedding and finds the closest skill via cosine similarity. This enables sub-millisecond intent matching for common tasks (time, weather, messaging) without any LLM inference.
 
-Skills scoring above 0.68 are executed directly. Skills scoring between 0.5 and 0.68 are noted but deferred to the LLM for confirmation.
+Skills scoring above 0.68 are executed directly. Skills scoring between 0.55 and 0.68 are noted but deferred to the LLM for confirmation.
 
 ## Portable Skills
 

@@ -20,10 +20,6 @@ export class Formatter {
       .replace(/\*\*Final Answer:\*\*\s*/g, '')
       .replace(/Step-by-Step Explanation:[\s\S]*?(?=Final Answer:|$)/g, '')
       .replace(/Final Answer:\s*/g, '')
-      // Strip Markdown (Partial - keep code blocks but strip decoration)
-      .replace(/(\*\*|__)(.*?)\1/g, '$2') // Bold
-      .replace(/(\*|_)(.*?)\1/g, '$2')    // Italics
-      .replace(/^#+\s+/gm, '')            // Headers
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
@@ -142,12 +138,10 @@ export class StreamingFormatter {
               }
             }
 
-            // Strip tags and Markdown symbols for streaming (only if symbols are present)
+            // Only strip internal tags, leave Markdown (bold, headers, etc.) for the UI
             let cleanToEmit = toEmit;
-            if (cleanToEmit.includes('<') || cleanToEmit.includes('*') || cleanToEmit.includes('#') || cleanToEmit.includes('_')) {
-              cleanToEmit = cleanToEmit
-                .replace(/<\/?final>/gi, '')
-                .replace(/\*\*|__|#+|\*|_/g, '');
+            if (cleanToEmit.includes('<')) {
+              cleanToEmit = cleanToEmit.replace(/<\/?final>/gi, '');
             }
             output += cleanToEmit;
             this.buffer = this.buffer.substring(emitUntil);

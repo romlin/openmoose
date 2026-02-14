@@ -45,8 +45,9 @@ OpenMoose is designed to be easily extensible. You can add new capabilities (ski
 | `description` | Yes | Human-readable purpose. |
 | `examples` | Yes | Phrases that trigger this skill (used for semantic matching). |
 | `args` | No | Definitions for extracting variables from the user's message. |
-| `command` | Yes | The shell command to execute inside the sandbox. |
-| `image` | No | Custom Docker image (defaults to `python:3.12-slim`). |
+| `command` | Yes | The shell command to execute (in a Docker sandbox by default, or on the host if `host: true`). |
+| `host` | No | If `true`, runs the command directly on the host machine instead of in a Docker sandbox. Use for trusted skills that need host tools (e.g., `python3`, `xdg-open`). Default: `false`. |
+| `image` | No | Custom Docker image for sandboxed execution (defaults to `python:3.12-slim`). Ignored when `host: true`. |
 
 ## Argument Extraction
 
