@@ -614,7 +614,7 @@ body {
     align-items: center;
     padding: var(--spacing-xs) 0;
     font-size: 0.85rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: none;
 }
 
 
@@ -650,7 +650,7 @@ body {
 .debug-console {
     background: #000;
     padding: var(--spacing-lg);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: none;
     border-radius: 0;
 }
 
@@ -667,12 +667,11 @@ body {
     padding: 4px 10px;
     font-family: monospace;
     font-size: 0.8rem;
-    border: 1px solid #333;
+    border: none;
     border-radius: 0;
 }
 
 .skill-tag.portable {
-    border-color: #4CAF50;
     color: #81C784;
 }
 
@@ -848,18 +847,16 @@ body {
 .progress-circle {
     width: 80px;
     height: 80px;
-    border: 2px solid rgba(255, 255, 255, 0.1);
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .progress-circle.ready {
-    border-color: #10b981;
 }
 
 .progress-circle.error {
-    border-color: #ef4444;
 }
 
 .progress-text {
@@ -883,7 +880,7 @@ body {
 
 .confirm-dialog {
     background: var(--bg-secondary);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: none;
     width: 100%;
     max-width: 400px;
     margin: var(--spacing-lg);
@@ -899,7 +896,7 @@ body {
 
 .confirm-actions {
     display: flex;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: none;
 }
 
 .confirm-btn {
@@ -916,7 +913,7 @@ body {
 
 .confirm-btn.cancel {
     color: var(--text-secondary);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: none;
 }
 
 .confirm-btn.cancel:hover {
