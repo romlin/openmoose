@@ -39,6 +39,7 @@ const WsPayloadSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('agent.memory.clear') }),
     z.object({ type: z.literal('whatsapp.send'), name: z.string(), text: z.string() }),
     z.object({ type: z.literal('agent.system.info') }),
+    z.object({ type: z.literal('brain.warmup') }),
 ]);
 
 /**
@@ -163,6 +164,13 @@ export class LocalGateway {
                 }
                 await this.whatsapp.sendMessage(contact.jid, payload.text);
                 ws.send(JSON.stringify({ type: 'whatsapp.send.result', success: true, message: `Message sent to ${contact.name}` }));
+            } else if (payload.type === 'brain.warmup') {
+                if (this.brainReady) {
+                    ws.send(JSON.stringify({ type: 'brain.status', status: 'ready', message: 'Brain is already ready' }));
+                } else {
+                    logger.info('Brain warmup requested, re-initializing...', 'Gateway');
+                    await this.initBrainAndRunner();
+                }
             } else if (payload.type === 'agent.system.info') {
                 try {
                     const info = {

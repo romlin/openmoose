@@ -247,6 +247,8 @@ function App() {
         setDownloadProgress(event.payload);
         if (event.payload.downloaded >= event.payload.total && event.payload.total > 0) {
           setIsDownloading(false);
+          // Model just finished downloading — tell the gateway to load it
+          wsSend({ type: "brain.warmup" });
         }
       });
       unlisten = cleanup;
@@ -256,7 +258,7 @@ function App() {
     return () => {
       if (unlisten) unlisten();
     };
-  }, []);
+  }, [wsSend]);
 
   const handleSendMessage = (content: string) => {
     pendingSourceRef.current = null;
