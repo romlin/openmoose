@@ -753,27 +753,51 @@ body {
     line-height: 1.6;
 }
 
-.mode-options {
+.check-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-xs);
 }
 
-.mode-card {
-    background: var(--bg-accent);
-    padding: var(--spacing-lg);
+.check-row {
+    font-size: 0.95rem;
 }
 
-.mode-card h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 var(--spacing-xs) 0;
+.check-row-main {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) 0;
+}
+
+.check-icon {
+    width: 1.2em;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.check-row.checking .check-icon { color: var(--text-secondary); }
+.check-row.found .check-icon,
+.check-row.ready .check-icon { color: #10b981; }
+.check-row.missing .check-icon,
+.check-row.error .check-icon { color: #ef4444; }
+
+.check-label {
+    font-weight: 500;
     color: var(--text-primary);
+    min-width: 5em;
 }
 
-.mode-card p {
-    font-size: 0.9rem;
-    margin: 0;
+.check-detail {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.check-error {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 0 0 var(--spacing-sm) 1.8em;
 }
 
 .primary-btn {
@@ -811,22 +835,6 @@ body {
 
 .retry-btn:hover {
     background: rgba(255, 255, 255, 0.1);
-}
-
-.docker-status {
-    padding: var(--spacing-md);
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-}
-
-.docker-status.found,
-.docker-status.ready {
-    color: #10b981;
-}
-
-.docker-status.missing,
-.docker-status.error {
-    color: #ef4444;
 }
 
 .error-box {

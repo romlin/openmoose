@@ -1,7 +1,46 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes, calcProgressPercent } from "../lib/utils";
 import type { DownloadProgress } from "../lib/types";
+
+type CheckStatus = "not_checked" | "checking" | "found" | "missing" | "ready" | "error";
+
+interface CheckRowProps {
+    label: string;
+    status: CheckStatus;
+    detail?: string;
+    errorHint?: string;
+    onRetry: () => void;
+}
+
+/** Compact single-line requirement check with expandable error. */
+function CheckRow({ label, status, detail, errorHint, onRetry }: CheckRowProps) {
+    const ok = status === "found" || status === "ready";
+    const bad = status === "missing" || status === "error";
+    return (
+        <div className={`check-row ${status}`}>
+            <div className="check-row-main">
+                <span className="check-icon">
+                    {status === "checking" && "○"}
+                    {ok && "✓"}
+                    {bad && "✗"}
+                </span>
+                <span className="check-label">{label}</span>
+                <span className="check-detail">
+                    {status === "checking" && "checking..."}
+                    {ok && (detail || "ready")}
+                    {bad && "not found"}
+                </span>
+            </div>
+            {bad && (
+                <div className="check-error">
+                    {errorHint && <span className="setup-note">{errorHint}</span>}
+                    <button className="retry-btn" onClick={onRetry}>Retry</button>
+                </div>
+            )}
+        </div>
+    );
+}
 
 interface SetupWizardProps {
     onComplete: () => void;
@@ -21,30 +60,15 @@ export function SetupWizard({
     gatewayPort
 }: SetupWizardProps) {
     const [step, setStep] = useState(1);
-    const [nodeStatus, setNodeStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
+    const [nodeStatus, setNodeStatus] = useState<CheckStatus>("not_checked");
     const [nodeVersion, setNodeVersion] = useState<string | null>(null);
-    const [dockerStatus, setDockerStatus] = useState<"not_checked" | "checking" | "found" | "missing">("not_checked");
-    const [browserStatus, setBrowserStatus] = useState<"not_checked" | "checking" | "ready" | "error">("not_checked");
+    const [dockerStatus, setDockerStatus] = useState<CheckStatus>("not_checked");
+    const [browserStatus, setBrowserStatus] = useState<CheckStatus>("not_checked");
     const [browserError, setBrowserError] = useState<string | null>(null);
 
     const nextStep = () => setStep(prev => prev + 1);
 
-    useEffect(() => {
-        if (step === 2 && nodeStatus === "not_checked") {
-            checkNode();
-        }
-        if (step === 3 && dockerStatus === "not_checked") {
-            checkDocker();
-        }
-        if (step === 4 && browserStatus === "not_checked") {
-            ensureBrowserReady();
-        }
-        if (step === 5 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
-            onStartDownload();
-        }
-    }, [step, nodeStatus, dockerStatus, browserStatus, isDownloading, onStartDownload, downloadProgress, downloadError]);
-
-    const checkNode = async () => {
+    const checkNode = useCallback(async () => {
         setNodeStatus("checking");
         try {
             const version = await invoke<string>("check_node");
@@ -54,9 +78,9 @@ export function SetupWizard({
             console.error("Node.js check failed:", err);
             setNodeStatus("missing");
         }
-    };
+    }, []);
 
-    const checkDocker = async () => {
+    const checkDocker = useCallback(async () => {
         setDockerStatus("checking");
         try {
             const isAvailable = await invoke<boolean>("check_docker");
@@ -65,26 +89,22 @@ export function SetupWizard({
             console.error("Docker check failed:", err);
             setDockerStatus("missing");
         }
-    };
+    }, []);
 
-    const ensureBrowserReady = async () => {
+    const ensureBrowserReady = useCallback(async () => {
         setBrowserStatus("checking");
         setBrowserError(null);
         try {
             await invoke("start_gateway");
             const base = `http://127.0.0.1:${gatewayPort}`;
-            const healthUrl = `${base}/health`;
-            const browserReadyUrl = `${base}/setup/browser-ready`;
             for (let i = 0; i < 60; i++) {
                 try {
-                    const r = await fetch(healthUrl);
+                    const r = await fetch(`${base}/health`);
                     if (r.ok) break;
-                } catch {
-                    // Gateway not up yet
-                }
+                } catch { /* gateway not up yet */ }
                 await new Promise((r) => setTimeout(r, 500));
             }
-            const readyRes = await fetch(browserReadyUrl);
+            const readyRes = await fetch(`${base}/setup/browser-ready`);
             if (readyRes.ok) {
                 setBrowserStatus("ready");
                 return;
@@ -97,9 +117,23 @@ export function SetupWizard({
             setBrowserError(String(err));
             setBrowserStatus("error");
         }
-    };
+    }, [gatewayPort]);
+
+    useEffect(() => {
+        if (step === 2) {
+            if (nodeStatus === "not_checked") checkNode();
+            if (dockerStatus === "not_checked") checkDocker();
+        }
+        if (step === 3 && browserStatus === "not_checked") {
+            ensureBrowserReady();
+        }
+        if (step === 4 && !isDownloading && (!downloadProgress || (downloadProgress.downloaded < downloadProgress.total)) && !downloadError) {
+            onStartDownload();
+        }
+    }, [step, nodeStatus, dockerStatus, browserStatus, isDownloading, onStartDownload, downloadProgress, downloadError, checkNode, checkDocker, ensureBrowserReady]);
 
     const progressPercent = calcProgressPercent(downloadProgress);
+    const requirementsMet = nodeStatus === "found" && dockerStatus === "found";
 
     return (
         <div className="setup-overlay">
@@ -115,100 +149,50 @@ export function SetupWizard({
                 {step === 2 && (
                     <div className="setup-step fadeIn">
                         <h2>System Requirements</h2>
-                        <div className="mode-options">
-                            <div className="mode-card active">
-                                <h3>Node.js Runtime</h3>
-                                <p>The AI gateway requires Node.js (v20+) to run locally.</p>
-                            </div>
+                        <div className="check-list">
+                            <CheckRow
+                                label="Node.js"
+                                status={nodeStatus}
+                                detail={nodeVersion ?? undefined}
+                                errorHint="Install Node.js v20+ from nodejs.org or via your package manager."
+                                onRetry={checkNode}
+                            />
+                            <CheckRow
+                                label="Docker"
+                                status={dockerStatus}
+                                detail="running"
+                                errorHint="Install Docker and start the daemon."
+                                onRetry={checkDocker}
+                            />
                         </div>
 
-                        <div className={`docker-status ${nodeStatus}`}>
-                            {nodeStatus === "checking" && <p>Checking for Node.js...</p>}
-                            {nodeStatus === "found" && <p>Node.js detected: {nodeVersion}</p>}
-                            {nodeStatus === "missing" && (
-                                <div className="error-box">
-                                    <p>Node.js not found.</p>
-                                    <p className="setup-note">OpenMoose requires Node.js v20 or later. Install it from <strong>nodejs.org</strong> or via your package manager, then click retry.</p>
-                                    <button className="retry-btn" onClick={checkNode}>Retry Check</button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            className="primary-btn"
-                            onClick={nextStep}
-                            disabled={nodeStatus !== "found"}
-                        >
-                            {nodeStatus === "found" ? "Continue" : "Waiting for Node.js..."}
+                        <button className="primary-btn" onClick={nextStep} disabled={!requirementsMet}>
+                            {requirementsMet ? "Continue" : "Waiting..."}
                         </button>
                     </div>
                 )}
 
                 {step === 3 && (
                     <div className="setup-step fadeIn">
-                        <h2>Secure by Default</h2>
-                        <div className="mode-options">
-                            <div className="mode-card active">
-                                <h3>Hardened Sandbox</h3>
-                                <p>All code skills (Python, Node.js) run in isolated Docker containers for maximum privacy and safety.</p>
-                            </div>
+                        <h2>Browser Sandbox</h2>
+                        <div className="check-list">
+                            <CheckRow
+                                label="Sandbox image"
+                                status={browserStatus}
+                                detail="ready"
+                                errorHint={browserError ?? undefined}
+                                onRetry={ensureBrowserReady}
+                            />
                         </div>
+                        <p className="setup-note">Building Docker image for isolated browser skills. This runs once.</p>
 
-                        <div className={`docker-status ${dockerStatus}`}>
-                            {dockerStatus === "checking" && <p>Checking for Docker...</p>}
-                            {dockerStatus === "found" && <p>Docker detected and running.</p>}
-                            {dockerStatus === "missing" && (
-                                <div className="error-box">
-                                    <p>Docker not found or not running.</p>
-                                    <p className="setup-note">OpenMoose requires Docker to run safely. Please install Docker and start the daemon, then click retry.</p>
-                                    <button className="retry-btn" onClick={checkDocker}>Retry Check</button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            className="primary-btn"
-                            onClick={nextStep}
-                            disabled={dockerStatus !== "found"}
-                        >
-                            {dockerStatus === "found" ? "Continue" : "Waiting for Docker..."}
+                        <button className="primary-btn" onClick={nextStep} disabled={browserStatus !== "ready"}>
+                            {browserStatus === "ready" ? "Continue" : "Building..."}
                         </button>
                     </div>
                 )}
 
                 {step === 4 && (
-                    <div className="setup-step fadeIn">
-                        <h2>Browser Container</h2>
-                        <div className="mode-options">
-                            <div className="mode-card active">
-                                <h3>Build Sandbox Image</h3>
-                                <p>OpenMoose builds a Docker image for running browser-based skills in isolation. This runs once.</p>
-                            </div>
-                        </div>
-
-                        <div className={`docker-status ${browserStatus}`}>
-                            {browserStatus === "checking" && <p>Starting gateway and building browser image...</p>}
-                            {browserStatus === "ready" && <p>Browser container ready.</p>}
-                            {browserStatus === "error" && (
-                                <div className="error-box">
-                                    <p>Browser image build failed.</p>
-                                    <p className="setup-note">{browserError}</p>
-                                    <button className="retry-btn" onClick={ensureBrowserReady}>Retry</button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            className="primary-btn"
-                            onClick={nextStep}
-                            disabled={browserStatus !== "ready"}
-                        >
-                            {browserStatus === "ready" ? "Continue" : "Waiting for browser container..."}
-                        </button>
-                    </div>
-                )}
-
-                {step === 5 && (
                     <div className="setup-step fadeIn">
                         <h2>Setting Up Your Moose</h2>
                         <div className="progress-container">

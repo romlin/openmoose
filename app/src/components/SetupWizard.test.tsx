@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { SetupWizard } from "./SetupWizard";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -11,6 +11,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("SetupWizard", () => {
+    // Suppress expected console.error from rejected invoke mocks
+    let errorSpy: ReturnType<typeof vi.spyOn>;
+    beforeAll(() => { errorSpy = vi.spyOn(console, "error").mockImplementation(() => {}); });
+    afterAll(() => { errorSpy.mockRestore(); });
+
     const defaultProps = {
         onComplete: vi.fn(),
         downloadProgress: null,
@@ -26,7 +31,7 @@ describe("SetupWizard", () => {
         expect(screen.getByText("Get Started")).toBeInTheDocument();
     });
 
-    it("advances to step 2 (Node.js check) on Get Started click", async () => {
+    it("advances to step 2 (system requirements) on Get Started click", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
@@ -36,21 +41,24 @@ describe("SetupWizard", () => {
         );
     });
 
-    it("shows Node.js requirement info on step 2", async () => {
+    it("shows both Node.js and Docker checks on step 2", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        expect(screen.getByText("Node.js Runtime")).toBeInTheDocument();
+        expect(screen.getByText("Node.js")).toBeInTheDocument();
+        expect(screen.getByText("Docker")).toBeInTheDocument();
     });
 
-    it("disables continue button when Node.js is not found", async () => {
+    it("disables continue button when requirements are not met", async () => {
         render(<SetupWizard {...defaultProps} />);
         await act(async () => {
             fireEvent.click(screen.getByText("Get Started"));
         });
-        const continueBtn = screen.getByText("Waiting for Node.js...");
-        expect(continueBtn).toBeDisabled();
+        await waitFor(() => {
+            const continueBtn = screen.getByText("Waiting...");
+            expect(continueBtn).toBeDisabled();
+        });
     });
 
     it("does not show download error on step 1", () => {

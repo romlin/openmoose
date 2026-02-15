@@ -396,6 +396,15 @@ export class LocalGateway {
             ? `${config.brain.provider} · ${modelName}`
             : `${config.brain.provider} · ${config.brain.llamaCpp.gpu} · ${modelName}`;
 
+        // For local models, verify the file exists before attempting warmup
+        if (config.brain.provider === 'node-llama-cpp' && !existsSync(config.brain.llamaCpp.modelPath)) {
+            printPending('Brain', `model not found — download or run setup first`);
+            logger.error(`Model file not found: ${config.brain.llamaCpp.modelPath}`, 'Brain');
+            this.brainReady = false;
+            this.broadcast({ type: 'brain.status', status: 'error', message: `Model not found: ${config.brain.llamaCpp.modelPath}` });
+            return;
+        }
+
         printStatus('Brain', brainStatus);
 
         // Async warmup with status broadcast

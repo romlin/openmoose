@@ -25,6 +25,16 @@ export class LlamaProvider implements BrainProvider {
     private async ensureInitialized() {
         if (this.llamaChat) return;
 
+        // Verify the model file exists before attempting to load it
+        const fs = await import('node:fs/promises');
+        const modelPath = config.brain.llamaCpp.modelPath;
+        const exists = await fs.access(modelPath).then(() => true).catch(() => false);
+        if (!exists) {
+            const msg = `Model file not found: ${modelPath}\nRun the setup script or download the model to this path before starting.`;
+            logger.error(msg, 'Brain');
+            throw new Error(msg);
+        }
+
         const requestedSize = config.brain.llamaCpp.contextSize;
         const sizesToTry = [
             requestedSize,
