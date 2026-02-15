@@ -860,16 +860,27 @@ body {
 .progress-circle {
     width: 80px;
     height: 80px;
-    border: none;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
     display: flex;
     align-items: center;
     justify-content: center;
+    animation: spin 1s linear infinite;
 }
 
 .progress-circle.ready {
+    border-color: var(--accent);
+    animation: none;
 }
 
 .progress-circle.error {
+    border-color: var(--danger, #e74c3c);
+    animation: none;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .progress-text {
