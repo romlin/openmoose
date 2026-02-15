@@ -184,7 +184,7 @@ export function SetupWizard({
                                 onRetry={ensureBrowserReady}
                             />
                         </div>
-                        <p className="setup-note">Building Docker image for isolated browser skills. This runs once.</p>
+                        <p className="setup-note">Building Docker image for isolated browser skills.</p>
 
                         <button className="primary-btn" onClick={nextStep} disabled={browserStatus !== "ready"}>
                             {browserStatus === "ready" ? "Continue" : "Building..."}
