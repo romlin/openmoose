@@ -196,9 +196,6 @@ export function SetupWizard({
                     <div className="setup-step fadeIn">
                         <h2>Setting Up Your Moose</h2>
                         <div className="progress-container">
-                            <div className={`progress-circle ${progressPercent === 100 ? 'ready' : ''} ${downloadError ? 'error' : ''}`}>
-                                <span className="progress-text">{downloadError ? "!" : `${progressPercent}%`}</span>
-                            </div>
                             {downloadError ? (
                                 <div className="error-box">
                                     <p>Download Error</p>
