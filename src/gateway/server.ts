@@ -89,6 +89,16 @@ export class LocalGateway {
                 this.sessions.delete(ws);
                 logger.info('Node disconnected from Gateway', 'Gateway');
             });
+
+            // Send current brain status so the client knows immediately
+            const status = this.brainReady ? 'ready' : 'error';
+            ws.send(JSON.stringify({ type: 'brain.status', status }));
+
+            // If the model file appeared after startup (e.g. downloaded), auto-warm up
+            if (!this.brainReady && config.brain.provider === 'node-llama-cpp' && existsSync(config.brain.llamaCpp.modelPath)) {
+                logger.info('Model file detected on client connect, initiating brain warmup...', 'Gateway');
+                this.initBrainAndRunner();
+            }
         });
     }
 

@@ -247,8 +247,13 @@ function App() {
         setDownloadProgress(event.payload);
         if (event.payload.downloaded >= event.payload.total && event.payload.total > 0) {
           setIsDownloading(false);
-          // Model just finished downloading — tell the gateway to load it
-          wsSend({ type: "brain.warmup" });
+          // Model just finished downloading — tell the gateway to load it.
+          // Retry a few times in case the WebSocket isn't connected yet.
+          const tryWarmup = (attempt: number) => {
+            if (wsSend({ type: "brain.warmup" })) return;
+            if (attempt < 5) setTimeout(() => tryWarmup(attempt + 1), 2000);
+          };
+          tryWarmup(0);
         }
       });
       unlisten = cleanup;
