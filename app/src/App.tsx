@@ -11,6 +11,12 @@ import { DEFAULT_GATEWAY_PORT } from "./lib/utils";
 import type { Message, ViewType, BrainStatus, DownloadProgress, MemoryEntry, GatewayMessage, StartupInfo } from "./lib/types";
 import "./App.css";
 
+const MAX_UI_MESSAGES = 200;
+
+function trimMessages(messages: Message[]): Message[] {
+  return messages.length > MAX_UI_MESSAGES ? messages.slice(-MAX_UI_MESSAGES) : messages;
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: "assistant", content: "How can I help you today?" }
@@ -59,9 +65,9 @@ function App() {
               content: last.content + (payload.text || ""),
               ...(source && !last.source ? { source } : {}),
             };
-            return updated;
+            return trimMessages(updated);
           }
-          return [...prev, { id: Date.now(), role: "assistant", content: payload.text || "", ...(source ? { source } : {}) }];
+          return trimMessages([...prev, { id: Date.now(), role: "assistant", content: payload.text || "", ...(source ? { source } : {}) }]);
         });
         break;
       }
@@ -102,16 +108,16 @@ function App() {
         break;
       case "error":
         setIsThinking(false);
-        setMessages(prev => [...prev, { id: Date.now(), role: "assistant", content: `Error: ${payload.message} ` }]);
+        setMessages(prev => trimMessages([...prev, { id: Date.now(), role: "assistant", content: `Error: ${payload.message} ` }]));
         break;
       case "agent.history.result":
         if (payload.history && payload.history.length > 0) {
-          setMessages(payload.history.map((m, index) => ({
+          setMessages(trimMessages(payload.history.map((m, index) => ({
             id: index + 1,
             role: m.role,
             content: m.content,
             source: m.source,
-          })));
+          }))));
         }
         break;
       case "agent.history.clear.result":
@@ -267,7 +273,7 @@ function App() {
 
   const handleSendMessage = (content: string) => {
     pendingSourceRef.current = null;
-    setMessages(prev => [...prev, { id: Date.now(), role: "user", content }]);
+    setMessages(prev => trimMessages([...prev, { id: Date.now(), role: "user", content }]));
     setIsThinking(true);
 
     const MAX_RETRIES = 10;
@@ -281,10 +287,10 @@ function App() {
 
       if (attempt >= MAX_RETRIES) {
         setIsThinking(false);
-        setMessages(prev => [
+        setMessages(prev => trimMessages([
           ...prev,
           { id: Date.now(), role: "assistant", content: "Failed to send message — connection unavailable. Please try again." }
-        ]);
+        ]));
         return;
       }
 

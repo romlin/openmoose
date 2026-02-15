@@ -71,6 +71,7 @@ export class LocalGateway {
     private whatsappSessions = new Map<string, { role: 'user' | 'assistant', content: string }[]>();
     private skillsPrompt = '';
     private brainReady = false;
+    private brainWarmupPromise: Promise<void> | null = null;
 
     constructor(port: number = config.gateway.port) {
         this.port = port;
@@ -91,11 +92,11 @@ export class LocalGateway {
             });
 
             // Send current brain status so the client knows immediately
-            const status = this.brainReady ? 'ready' : 'error';
+            const status = this.brainReady ? 'ready' : (this.brainWarmupPromise ? 'warming_up' : 'error');
             ws.send(JSON.stringify({ type: 'brain.status', status }));
 
             // If the model file appeared after startup (e.g. downloaded), auto-warm up
-            if (!this.brainReady && config.brain.provider === 'node-llama-cpp' && existsSync(config.brain.llamaCpp.modelPath)) {
+            if (!this.brainReady && !this.brainWarmupPromise && config.brain.provider === 'node-llama-cpp' && existsSync(config.brain.llamaCpp.modelPath)) {
                 logger.info('Model file detected on client connect, initiating brain warmup...', 'Gateway');
                 this.initBrainAndRunner();
             }
@@ -177,6 +178,8 @@ export class LocalGateway {
             } else if (payload.type === 'brain.warmup') {
                 if (this.brainReady) {
                     ws.send(JSON.stringify({ type: 'brain.status', status: 'ready', message: 'Brain is already ready' }));
+                } else if (this.brainWarmupPromise) {
+                    ws.send(JSON.stringify({ type: 'brain.status', status: 'warming_up', message: 'Brain warmup already in progress' }));
                 } else {
                     logger.info('Brain warmup requested, re-initializing...', 'Gateway');
                     await this.initBrainAndRunner();
@@ -404,6 +407,11 @@ export class LocalGateway {
     }
 
     private async initBrainAndRunner() {
+        if (this.brainWarmupPromise) {
+            logger.debug('Brain warmup is already in progress, skipping duplicate request.', 'Gateway');
+            return;
+        }
+
         const modelName = getModelName();
 
         this.brain = new LocalBrain({ memory: this.memory, registry: this.skillRegistry, skillsPrompt: this.skillsPrompt });
@@ -426,7 +434,7 @@ export class LocalGateway {
         printStatus('Brain', brainStatus);
 
         // Async warmup with status broadcast
-        (async () => {
+        const warmupTask = (async () => {
             try {
                 this.brainReady = false;
                 this.broadcast({ type: 'brain.status', status: 'warming_up', message: 'Loading model into RAM...' });
@@ -437,8 +445,11 @@ export class LocalGateway {
                 this.brainReady = false;
                 logger.error('Warmup failed', 'Gateway', err);
                 this.broadcast({ type: 'brain.status', status: 'error', message: String(err) });
+            } finally {
+                this.brainWarmupPromise = null;
             }
         })();
+        this.brainWarmupPromise = warmupTask;
     }
 
     private broadcast(payload: Record<string, unknown>) {

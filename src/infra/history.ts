@@ -3,7 +3,7 @@
  * Messages are appended to a log file in the .moose directory.
  */
 
-import { appendFile, readFile, mkdir } from 'node:fs/promises';
+import { appendFile, readFile, mkdir, open } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { config } from '../config/index.js';
@@ -64,8 +64,48 @@ export class HistoryManager {
 
     /** Load only the last N messages for context. */
     async loadLast(n: number): Promise<HistoryMessage[]> {
-        const full = await this.load();
-        return full.slice(-n);
+        if (n <= 0 || !existsSync(this.historyPath)) return [];
+
+        let fd: Awaited<ReturnType<typeof open>> | null = null;
+        try {
+            fd = await open(this.historyPath, 'r');
+            const stats = await fd.stat();
+            if (stats.size === 0) return [];
+
+            const chunkSize = 64 * 1024;
+            let position = stats.size;
+            let content = '';
+            let lines: string[] = [];
+
+            while (position > 0 && lines.filter(line => line.trim()).length <= n) {
+                const readSize = Math.min(chunkSize, position);
+                position -= readSize;
+
+                const buffer = Buffer.alloc(readSize);
+                await fd.read(buffer, 0, readSize, position);
+                content = buffer.toString('utf-8') + content;
+                lines = content.split('\n');
+            }
+
+            const parsed: HistoryMessage[] = [];
+            // The first line may be partial when reading backwards in chunks, so skip it.
+            for (const line of lines.slice(1)) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                    parsed.push(JSON.parse(trimmed) as HistoryMessage);
+                } catch {
+                    // Ignore malformed lines instead of failing the entire request.
+                }
+            }
+
+            return parsed.slice(-n);
+        } catch (err) {
+            logger.error('Failed to load last history messages', 'History', err);
+            return [];
+        } finally {
+            await fd?.close().catch(() => { });
+        }
     }
 
     /** Clear all history. */
